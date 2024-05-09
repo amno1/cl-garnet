@@ -153,9 +153,7 @@ Change log:
   Use left button only.  When in *Select* mode the two rectangles can be selected.
   When in *Move* Mode, the two rects or the text string can be moved.
   Change modes by pressing on the Select/Move string or typing 't'.~%")
-  (unless dont-enter-main-event-loop #-cmu (inter:main-event-loop))
-  )
-
+  (unless dont-enter-main-event-loop #-(or sbcl cmu) (inter:main-event-loop)))
 
 (defun do-stop ()
   (opal:destroy win))

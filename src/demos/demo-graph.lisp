@@ -271,10 +271,7 @@
       Typing the name of a garnet object in the labeled box will
    put that garnet object at the root.~%")
 
-  (unless dont-enter-main-event-loop #-cmu (inter:main-event-loop))
-  
-  )
-
+  (unless dont-enter-main-event-loop #-(or sbcl cmu) (inter:main-event-loop)))
 
 (defun DO-STOP ()
   (opal:destroy DEMO-GRAPH-WIN)

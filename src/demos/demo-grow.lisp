@@ -175,10 +175,7 @@
   Press on the background (where there are no objects) with the left button
      to cause there to be no objects selected.~%")
 
-  (unless dont-enter-main-event-loop #-cmu (inter:main-event-loop))
-
-  )
-
+  (unless dont-enter-main-event-loop #-(or sbcl cmu) (inter:main-event-loop)))
 
 (defun Do-stop ()
   (Opal:Destroy win))

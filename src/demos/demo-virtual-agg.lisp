@@ -250,9 +250,8 @@
   (format t   "           right button to destroy circle.~%")
   (format t "~%           shift-middle randomly changes color of circle.~%")
   (format t   "           shift-right toggles visibility of virtual-aggregate.~%")
-  (unless dont-enter-main-event-loop #-cmu (inter:main-event-loop))
-  )
-
+  (unless dont-enter-main-event-loop
+    #-(or sbcl cmu) (inter:main-event-loop)))
 
 (defun Do-Stop ()
   (opal:destroy w))

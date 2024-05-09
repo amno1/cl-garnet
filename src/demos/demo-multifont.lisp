@@ -398,10 +398,7 @@ Font changing:
 
 
   (unless dont-enter-main-event-loop
-    #-cmu (inter:main-event-loop)
-    )
-  )
-
+    #-(or sbcl cmu) (inter:main-event-loop)))
 
 ;; Do-stop kills the parent window which will destroy all internal garnet
 ;; objects and gadgets.

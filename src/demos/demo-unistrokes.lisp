@@ -787,6 +787,6 @@
     (format t "characters (and carriage returns via the \"CR\" icon) can be added by~%")
     (format t "clicking on the icons at the bottom.~%")
 
-    (unless dont-enter-main-event-loop #-cmu (inter:main-event-loop)))
+    (unless dont-enter-main-event-loop #-(or sbcl cmu) (inter:main-event-loop)))
 
 (format t "Type (demo-unistrokes:do-go) to begin.~%")

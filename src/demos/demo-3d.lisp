@@ -442,6 +442,4 @@
 
   (Format T "~%Demo-3D:
   Left button operates the 3 different menus.~%")
-  (unless dont-enter-main-event-loop #-cmu (inter:main-event-loop))
-  )
-
+  (unless dont-enter-main-event-loop #-(or sbcl cmu) (inter:main-event-loop)))

@@ -877,8 +877,7 @@ top-tag
       (warn "Garnet-Calc demo is already running -- must do-stop first.")
       (setf *Demo-App-Obj* (start-calc :double-buffered-p double-buffered-p)))
 
-  (unless dont-enter-main-event-loop #-cmu (inter:main-event-loop))
-  )
+  (unless dont-enter-main-event-loop #-(or sbcl cmu) (inter:main-event-loop)))
 
 (defun do-stop ()
   (when (kr:schema-p *Demo-App-Obj*)

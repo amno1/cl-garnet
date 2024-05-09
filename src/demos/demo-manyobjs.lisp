@@ -149,8 +149,7 @@ Good values of number-of-rectangles are 3..50"
   locations for all objects.
   Execute the function (Demo-Manyobjs:Move n) to move an object n times (e.g., 100)~%")
     )
-  (unless dont-enter-main-event-loop #-cmu (inter:main-event-loop))
-)
+  (unless dont-enter-main-event-loop #-(or sbcl cmu) (inter:main-event-loop)))
 #|
 (Defun Move (n)
   (let* ((obj (third (g-value agg :components)))

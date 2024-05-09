@@ -1668,7 +1668,7 @@ to edit a polygon(s):
 
 ~%")
 
-  (unless dont-enter-main-event-loop #-cmu (inter:main-event-loop)))
+  (unless dont-enter-main-event-loop #-(or sbcl cmu) (inter:main-event-loop)))
 
 (defun do-stop ()
   (opal:destroy main-window)

@@ -384,7 +384,7 @@
         hit ^G or ^g to abort.
   ~%")
 
-    (unless dont-enter-main-event-loop #-cmu (inter:main-event-loop))
+    (unless dont-enter-main-event-loop #-(or sbcl cmu) (inter:main-event-loop))
 
     ;; return top window
     top-win))

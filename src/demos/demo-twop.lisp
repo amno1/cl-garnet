@@ -144,7 +144,7 @@
 
   ;; ** Do-Go **
   (opal:update vp) 
-  (unless dont-enter-main-event-loop #-cmu (inter:main-event-loop))
+  (unless dont-enter-main-event-loop #-(or sbcl cmu) (inter:main-event-loop))
 
   (format t "Demo-Twop:
    This is a demonstration of the two-point-interactor.  Click and drag with

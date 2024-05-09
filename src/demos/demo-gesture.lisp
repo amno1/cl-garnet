@@ -216,14 +216,11 @@
    Shapes can be copied by drawing a `C' on a shape with the `C' starting inside
    the shape to be copied.~%")
 
-  (unless dont-enter-main-event-loop #-cmu (inter:main-event-loop))
-)
-
+  (unless dont-enter-main-event-loop #-(or sbcl cmu) (inter:main-event-loop)))
 
 ;; do-stop destroys the application window and everything beneath it.
 ;;
 ;; Parmeters:
 ;;     none
 (defun do-stop ()
-    (opal:destroy TOP-WIN)
-)
+    (opal:destroy TOP-WIN))

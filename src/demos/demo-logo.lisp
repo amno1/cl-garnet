@@ -428,8 +428,7 @@
 			(declare (ignore args))
 			(go-to-next-status))))
   "Press in window to start, press again to reset"
-  (unless dont-enter-main-event-loop
-      (inter:main-event-loop)))
+  (unless dont-enter-main-event-loop (inter:main-event-loop)))
 
 (defun Do-Stop ()
   (setf *status* :beginning)

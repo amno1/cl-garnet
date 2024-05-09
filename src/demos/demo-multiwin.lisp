@@ -232,9 +232,7 @@
   down and the object can be moved into another window.  The feedback will follow
   to the other window, and the object will be there on release.~%")
 
-  (unless dont-enter-main-event-loop #-cmu (inter:main-event-loop))
-
-  )
+  (unless dont-enter-main-event-loop #-(or sbcl cmu) (inter:main-event-loop)))
 
 ;; ** STOP **
 (defun Do-Stop ()

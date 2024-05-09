@@ -185,19 +185,14 @@
    Pressing on the 'Prev' button will show the previous directory
    in the hierarchy.~%")
 
-  (unless dont-enter-main-event-loop #-cmu (inter:main-event-loop))
-
-)
-
+  (unless dont-enter-main-event-loop #-(or sbcl cmu) (inter:main-event-loop)))
 
 (defun do-stop ()
   (opal:destroy FILE-BROWSER-WIN))
-
 
 (defun Do-Quit (gadget value)
   (declare (ignore gadget value))
   (do-stop)
    ;;for demo-controller
   (unless (and (fboundp 'common-lisp-user::Garnet-Note-Quitted)
-	       (common-lisp-user::Garnet-Note-Quitted "DEMO-FILE-BROWSER")))
-)
+	       (common-lisp-user::Garnet-Note-Quitted "DEMO-FILE-BROWSER"))))
