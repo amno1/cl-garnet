@@ -170,6 +170,12 @@
 	   display-info-root-window
 	   display-info-screen
 	   init-device
+	   init-device-post
+	   register-device
+	   *default-device-type*
+	   *device-initializers*
+	   DRAWABLE-EQUAL
+	   CHECK-WM-DELETE-WINDOW
 	   make-display-info
 	   max-character-descent)
   (:import-from :garnet-utils :black)

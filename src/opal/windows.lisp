@@ -682,16 +682,12 @@
 
 (defun Delete-Notify (event-debug event-window)
   (if event-debug (format t " delete-notify ~s~%" event-window))
-  ;; Will be changed to take a-window as a parameter, rather than
-  ;; event-window. Hence, the following will be unnecessary.
-  ;;
-  ;; XXX FMG I don't think so. Not sure how you deal with orphaned
-  ;; windows if you don't have the event window (X window) available.
-  (let ((a-window (getf (xlib:drawable-plist event-window) :garnet)))
+  ;; Use GEM's drawable-to-window to find the Opal window portably
+  (let ((a-window (gem:drawable-to-window (g-value gem:device-info :current-root) event-window)))
     (if (schema-p a-window)
 	(let ((drawable (g-value a-window :drawable)))
-	  (if (and drawable (= (xlib:window-id drawable)
-			       (xlib:window-id event-window)))
+	  (if (and drawable (gem:drawable-equal (g-value gem:device-info :current-root)
+                                                drawable event-window))
 	      (progn
 		;; Because the window is being destroyed because of an
 		;; event from the window manager, we want to allow the

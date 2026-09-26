@@ -6,8 +6,7 @@
 
 ;;  Functions that will determine whether the display can be opened
 (defun get-full-display-name ()
-  ;; If you have CLX, you most likely have this. (Except for allegro.)
-  (xlib::getenv "DISPLAY"))
+  (or (uiop:getenv "DISPLAY") ":0"))
 
 
 (defun get-display-number (display)
@@ -2478,6 +2477,39 @@ the X drawable."
   (declare (ignore root-window))
   (xlib:write-bitmap-file pathname image))
 
+(defun x-drawable-equal (root-window d1 d2)
+  (declare (ignore root-window))
+  (or (eql d1 d2)
+      (and (typep d1 'xlib:drawable)
+           (typep d2 'xlib:drawable)
+           (= (xlib:window-id d1) (xlib:window-id d2)))))
+
+(defun x-check-wm-delete-window (root-window type data format)
+  (and (eq format 32)
+       (eq type :WM_PROTOCOLS)
+       (let ((display (the-display (or root-window (g-value gem:device-info :current-root)))))
+         (and display
+              (ignore-errors
+                (eq (xlib:atom-name
+                     display
+                     (aref (the (simple-array (unsigned-byte 32) (5)) data) 0))
+                    :WM_DELETE_WINDOW))))))
+
+(defun init-x-device ()
+  (attach-X-methods x-device)
+  (s-value device-info :current-root *root-window*)
+  (s-value device-info :current-device x-device)
+  (pushnew x-device (g-value device-info :active-devices))
+  (set-draw-functions *root-window*)
+  *root-window*)
+
+(defun init-x-device-post ()
+  (initialize-device-values (get-full-display-name) *root-window*)
+  (x-initialize-device-post)
+  (s-value *root-window* :drawable
+	   (display-info-root-window *display-info*))
+  (s-value *root-window* :display-info *display-info*))
+
 (defun attach-X-methods (x-device)
   (attach-method x-device :all-garnet-windows #'x-all-garnet-windows)
   (attach-method x-device :beep #'x-beep)
@@ -2552,6 +2584,10 @@ the X drawable."
   (attach-method x-device :window-has-grown #'x-window-has-grown)
   (attach-method x-device :window-to-image #'x-window-to-image)
   (attach-method x-device :write-an-image #'x-write-an-image)
+  (attach-method x-device :drawable-equal #'x-drawable-equal)
+  (attach-method x-device :check-wm-delete-window #'x-check-wm-delete-window)
+  ;; Register :x device backend with GEM
+  (register-device :x #'init-x-device #'init-x-device-post)
 
   ;; Defined in inter/x-inter.lisp
   (attach-method x-device :check-double-press 'x-check-double-press)

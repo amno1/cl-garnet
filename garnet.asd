@@ -474,3 +474,26 @@
 	     (:file "keytrans")
 	     (:file "trace")
 	     (:file "util")))))
+
+;;; Backends for Garnet
+(asdf:defsystem :garnet/clx
+  :description "Garnet with CLX (X11) backend"
+  :depends-on (:garnet)
+  :license "MIT-ish (also public domain, see LICENSE)"
+  :author "CMU Garnet Team (plus various others, see LICENSE)")
+
+(asdf:defsystem :garnet/xcb
+  :description "Garnet with cl-xcb (pure Common Lisp X11) backend (work-in-progress)"
+  :depends-on (:alexandria :uiop :bordeaux-threads :cl-aa :cl-aa-misc
+               :cl-fad :cl-ppcre :cl-store :cl-vectors :trivial-features
+               :trivial-dump-core :cl-xcb)
+  :license "MIT-ish (also public domain, see LICENSE)"
+  :author "Arthur Miller")
+
+(asdf:defsystem :garnet/wl
+  :description "Garnet with Wayland (Wayflan) backend (work-in-progress)"
+  :depends-on (:alexandria :uiop :bordeaux-threads :cl-aa :cl-aa-misc
+               :cl-fad :cl-ppcre :cl-store :cl-vectors :trivial-features
+               :trivial-dump-core :wayflan)
+  :license "MIT-ish (also public domain, see LICENSE)"
+  :author "Arthur Miller")

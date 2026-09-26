@@ -585,13 +585,10 @@
 (defun do-unmap-notify (a-window)
   (opal::Unmap-Notify (debug-p :event) a-window))
 
-(defun do-client-message (event-window type data format display)
-  (cond ((and (eq format 32)
-	      (eq type :WM_PROTOCOLS)
-	      (eq (xlib:atom-name
-		   display
-		   (aref (the (simple-array (unsigned-byte 32) (5)) data) 0))
-		  :WM_DELETE_WINDOW))
+(defun do-client-message (event-window type data format &optional display)
+  (declare (ignore display))
+  (cond ((gem:check-wm-delete-window (g-value gem:device-info :current-root)
+                                     type data format)
 	 (opal::Delete-Notify NIL event-window))
 	((and (eq format 32)
 	      (eq type :TIMER_EVENT))

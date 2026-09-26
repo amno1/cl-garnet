@@ -179,14 +179,19 @@
 
 (gem-method :WRITE-AN-IMAGE (root-window pathname image))
 
+(gem-method :DRAWABLE-EQUAL (root-window d1 d2))
 
+(gem-method :CHECK-WM-DELETE-WINDOW (root-window type data format))
 
 ;;; This ends up being a macro, not a function; therefore, it is handled
 ;; specially.
 ;;
 (defmacro batch-changes (drawable &body body)
-  `(xlib:with-state ,drawable
-     ,@body))
+  (if (and (find-package "XLIB")
+           (macro-function (find-symbol "WITH-STATE" "XLIB")))
+      `(,(find-symbol "WITH-STATE" "XLIB") ,drawable
+         ,@body)
+      `(progn ,@body)))
 
 ;; This macro is called in the update method, so it has to be defined before
 ;; update-window.lisp.  Also, this macro requires that the Gworld module has

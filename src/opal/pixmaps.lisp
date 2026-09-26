@@ -70,7 +70,7 @@
 	    (meltsner-format nil)
 	    (pedro-format nil))
 	(declare (type string line)
-		 (type xlib:stringable name)
+		 (type (or null string symbol) name)
 		 (type list properties))
 	;; Get properties
 	(gu:until (not (search "XPM" line))
@@ -267,7 +267,7 @@
 	  (meltsner-format nil)
 	  (pedro-format nil))
       (declare (type string line)
-	       (type xlib:stringable name)
+	       (type (or null string symbol) name)
 	       (type list properties))
       ;; Get properties
       (gu:until (not (search "XPM" line))

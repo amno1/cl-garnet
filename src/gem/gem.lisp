@@ -32,7 +32,26 @@
 
 (defvar *device-initializers* nil
   "An a-list which associates device types with the function to be called
-     to initialize them.")
+   to initialize them.")
+
+(defvar *device-post-initializers* nil
+  "An a-list which associates device types with the post-initializer function.")
+
+(defparameter *default-device-type* :x
+  "The default device type to initialize if none is specified.")
+
+(defun register-device (device-type init-fn &optional post-init-fn)
+  "Register device initialization functions for DEVICE-TYPE."
+  (let ((entry (assoc device-type *device-initializers*)))
+    (if entry
+        (setf (cdr entry) init-fn)
+        (push (cons device-type init-fn) *device-initializers*)))
+  (when post-init-fn
+    (let ((pentry (assoc device-type *device-post-initializers*)))
+      (if pentry
+          (setf (cdr pentry) post-init-fn)
+          (push (cons device-type post-init-fn) *device-post-initializers*))))
+  device-type)
 
 ;;; Methods mechanism
 (defun attach-method (device method-name method)
@@ -192,28 +211,44 @@
 ;; into the root nodes of the windows and fonts hierarchies.
 (create-schema 'x-device (:root-window *root-window*) (:device-type :x))
 
-(defun init-device ()
-  (attach-x-methods x-device)
-  (s-value device-info :current-root *root-window*)
-  (s-value device-info :current-device x-device)
-  (pushnew x-device (g-value device-info :active-devices))
-  (set-draw-functions *root-window*)
-  *root-window*)
+(defun init-device (&optional (device-type *default-device-type*))
+  "Initialize the specified device backend (defaults to *default-device-type*)."
+  (let ((initializer (cdr (assoc device-type *device-initializers*))))
+    (if initializer
+        (funcall initializer)
+        ;; Fallback for backwards compatibility if x-device is loaded directly
+        (if (and (eq device-type :x) (fboundp (find-symbol "ATTACH-X-METHODS" "GEM")))
+            (progn
+              (funcall (find-symbol "ATTACH-X-METHODS" "GEM") x-device)
+              (s-value device-info :current-root *root-window*)
+              (s-value device-info :current-device x-device)
+              (pushnew x-device (g-value device-info :active-devices))
+              (set-draw-functions *root-window*)
+              *root-window*)
+            (error "No device initializer registered for ~S. Available devices: ~S"
+                   device-type (mapcar #'car *device-initializers*))))))
 
 (defparameter *post-compile-inits* '())
 (defparameter *system-compilation-complete* nil)
 
-;; getenv is internal to CLX, so the's some risk of it changing in the
-;; future.  But in the CL world it's still probably the most portable
-;; way of extracting DISPLAY host.
-(defparameter *x11-server-available* (xlib::getenv "DISPLAY"))
+;; Use portable UIOP to extract DISPLAY environment variable.
+(defparameter *x11-server-available* (uiop:getenv "DISPLAY"))
 
-(defun init-device-post ()
-  (initialize-device-values (get-full-display-name) *root-window*)
-  (x-initialize-device-post)
-  (s-value *root-window* :drawable
-	   (display-info-root-window *display-info*))
-  (s-value *root-window* :display-info *display-info*))
+(defun init-device-post (&optional (device-type *default-device-type*))
+  "Post-initialize the specified device backend."
+  (let ((post-initializer (cdr (assoc device-type *device-post-initializers*))))
+    (if post-initializer
+        (funcall post-initializer)
+        (when (and (eq device-type :x) (fboundp (find-symbol "INITIALIZE-DEVICE-VALUES" "GEM")))
+          (funcall (find-symbol "INITIALIZE-DEVICE-VALUES" "GEM")
+                   (get-full-display-name) *root-window*)
+          (when (fboundp (find-symbol "X-INITIALIZE-DEVICE-POST" "GEM"))
+            (funcall (find-symbol "X-INITIALIZE-DEVICE-POST" "GEM")))
+          (when (boundp (find-symbol "*DISPLAY-INFO*" "GEM"))
+            (let ((dinfo (symbol-value (find-symbol "*DISPLAY-INFO*" "GEM"))))
+              (s-value *root-window* :drawable
+                       (display-info-root-window dinfo))
+              (s-value *root-window* :display-info dinfo)))))))
 
 ;; This is a utility function, used only for interactive debugging.
 (defmacro adjust (name)
