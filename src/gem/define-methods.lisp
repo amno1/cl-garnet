@@ -183,15 +183,16 @@
 
 (gem-method :CHECK-WM-DELETE-WINDOW (root-window type data format))
 
-;;; This ends up being a macro, not a function; therefore, it is handled
-;; specially.
-;;
-(defmacro batch-changes (drawable &body body)
-  (if (and (find-package "XLIB")
-           (macro-function (find-symbol "WITH-STATE" "XLIB")))
-      `(,(find-symbol "WITH-STATE" "XLIB") ,drawable
-         ,@body)
-      `(progn ,@body)))
+(gem-method :BATCH-CHANGES (root-window drawable function))
+
+(gem-method :QUERY-COLOR (root-window pixel))
+
+;;; Macro for batching window changes portably across devices
+(defmacro batch-changes (drawable-form &body body)
+  (let ((drawable (if (listp drawable-form) (car drawable-form) drawable-form)))
+    `(gem:batch-changes (or gem:*root-window* (g-value gem:device-info :current-root))
+                        ,drawable
+                        (lambda () ,@body))))
 
 ;; This macro is called in the update method, so it has to be defined before
 ;; update-window.lisp.  Also, this macro requires that the Gworld module has

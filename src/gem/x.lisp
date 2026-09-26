@@ -2495,6 +2495,18 @@ the X drawable."
                      (aref (the (simple-array (unsigned-byte 32) (5)) data) 0))
                     :WM_DELETE_WINDOW))))))
 
+(defun x-batch-changes (root-window drawable function)
+  (declare (ignore root-window))
+  (xlib:with-state (drawable)
+    (funcall function)))
+
+(defun x-query-color (root-window pixel)
+  (declare (ignore root-window))
+  (let* ((xcolor (car (xlib:query-colors *default-x-colormap* (list pixel)))))
+    (values (xlib:color-red xcolor)
+            (xlib:color-green xcolor)
+            (xlib:color-blue xcolor))))
+
 (defun init-x-device ()
   (attach-X-methods x-device)
   (s-value device-info :current-root *root-window*)
@@ -2586,6 +2598,8 @@ the X drawable."
   (attach-method x-device :write-an-image #'x-write-an-image)
   (attach-method x-device :drawable-equal #'x-drawable-equal)
   (attach-method x-device :check-wm-delete-window #'x-check-wm-delete-window)
+  (attach-method x-device :batch-changes #'x-batch-changes)
+  (attach-method x-device :query-color #'x-query-color)
   ;; Register :x device backend with GEM
   (register-device :x #'init-x-device #'init-x-device-post)
 

@@ -214,19 +214,22 @@
 (defun init-device (&optional (device-type *default-device-type*))
   "Initialize the specified device backend (defaults to *default-device-type*)."
   (let ((initializer (cdr (assoc device-type *device-initializers*))))
-    (if initializer
-        (funcall initializer)
-        ;; Fallback for backwards compatibility if x-device is loaded directly
-        (if (and (eq device-type :x) (fboundp (find-symbol "ATTACH-X-METHODS" "GEM")))
-            (progn
-              (funcall (find-symbol "ATTACH-X-METHODS" "GEM") x-device)
-              (s-value device-info :current-root *root-window*)
-              (s-value device-info :current-device x-device)
-              (pushnew x-device (g-value device-info :active-devices))
-              (set-draw-functions *root-window*)
-              *root-window*)
-            (error "No device initializer registered for ~S. Available devices: ~S"
-                   device-type (mapcar #'car *device-initializers*))))))
+    (cond
+      (initializer
+       (funcall initializer))
+      ;; Fallback for backwards compatibility if x-device is loaded directly
+      ((and (eq device-type :x) (fboundp (find-symbol "ATTACH-X-METHODS" "GEM")))
+       (let ((attach-fn (find-symbol "ATTACH-X-METHODS" "GEM"))
+             (x-dev (find-symbol "X-DEVICE" "GEM")))
+         (when (and attach-fn x-dev (boundp x-dev))
+           (funcall attach-fn (symbol-value x-dev))
+           (s-value device-info :current-root *root-window*)
+           (s-value device-info :current-device (symbol-value x-dev))
+           (pushnew (symbol-value x-dev) (g-value device-info :active-devices))
+           (set-draw-functions *root-window*)
+           *root-window*)))
+      (t
+       nil))))
 
 (defparameter *post-compile-inits* '())
 (defparameter *system-compilation-complete* nil)
@@ -261,24 +264,16 @@
      (set-window-methods opal::window gem::x-device)))
 
 ;;; Another debugging function
-(defun trace-gem (device)
-  (let ((prefix
-	 (case device
-	   (:X "GEM::X-")
-	   (t
-	    (error "Unknown device ~S in trace-gem" device)))))
+(defun trace-gem (&optional (device *default-device-type*))
+  (let ((prefix (format nil "GEM::~A-" (string-upcase (symbol-name device)))))
     (dolist (key *method-names*)
       (let ((name (read-from-string
 		   (concatenate 'simple-string prefix (symbol-name key)))))
 	(eval `(trace ,name))
 	(eval `(adjust ,key))))))
 
-(defun untrace-gem (device)
-  (let ((prefix
-	 (case device
-	   (:X "GEM::X-")
-	   (t
-	    (error "Unknown device ~S in trace-gem" device)))))
+(defun untrace-gem (&optional (device *default-device-type*))
+  (let ((prefix (format nil "GEM::~A-" (string-upcase (symbol-name device)))))
     (dolist (key *method-names*)
       (let ((name (read-from-string
 		   (concatenate 'simple-string prefix (symbol-name key)))))

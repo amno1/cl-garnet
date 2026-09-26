@@ -176,6 +176,8 @@
 	   *device-initializers*
 	   DRAWABLE-EQUAL
 	   CHECK-WM-DELETE-WINDOW
+	   BATCH-CHANGES
+	   QUERY-COLOR
 	   make-display-info
 	   max-character-descent)
   (:import-from :garnet-utils :black)

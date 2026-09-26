@@ -18,7 +18,7 @@
 (setf (get :garnet-modules :inter) t)
 (setf (get :garnet-modules :multifont) t)
 
-(asdf:defsystem :garnet
+(asdf:defsystem :garnet/core
   :depends-on (alexandria
 	       uiop
 	       bordeaux-threads
@@ -29,11 +29,10 @@
 	       cl-store
 	       cl-vectors
 	       trivial-features
-	       clx
 	       trivial-dump-core)
   :license "MIT-ish (also public domain, see LICENSE)"
   :author "CMU Garnet Team (plus various others, see LICENSE)"
-  :description " GUI toolkit (c. 1990 look/feel)"
+  :description "Core Garnet GUI toolkit without backend display drivers"
   :components
   ((:file "post-processing"
 	  :depends-on
@@ -41,10 +40,9 @@
 		gesture demos garnet-desktop-lab lapidary c32 gilt
 		multi-garnet lapidary cl-processing))
    (:file "package")
-   (:file "clx-compatability" :depends-on (package))
    (:module utils
 	    :pathname ""
-	    :depends-on (package clx-compatability)
+	    :depends-on (package)
 	    :components
 	    ((:file "garnet-loader")
 	     (:file "src/utils/general")
@@ -62,8 +60,7 @@
    	    :depends-on (kr opal-boot)
    	    :components
 	    ((:file "gem")
-	     (:file "define-methods")
-	     (:file "x")))
+	     (:file "define-methods")))
    (:module opal-boot
    	    :pathname "src/opal"
    	    :depends-on (utils kr)
@@ -107,7 +104,6 @@
 	    ((:file "garnet-keytrans")
 	     (:file "define-mouse-keys")
 	     (:file "x-define-keys")
-	     (:file "x-inter")
 	     (:file "interactors")
 	     (:file "accelerators")
 	     (:file "animation-process")
@@ -460,7 +456,7 @@
 	    ((:file "post-processing")))))
 
 (asdf:defsystem :garnet/clx-debug
-  :depends-on (garnet)
+  :depends-on (:garnet/clx)
   :license "MIT-ish (also public domain, see LICENSE)"
   :author "CMU Garnet Team (plus various others, see LICENSE)"
   :description "CLX debugging tools"
@@ -478,22 +474,33 @@
 ;;; Backends for Garnet
 (asdf:defsystem :garnet/clx
   :description "Garnet with CLX (X11) backend"
-  :depends-on (:garnet)
+  :depends-on (:garnet/core :clx)
   :license "MIT-ish (also public domain, see LICENSE)"
-  :author "CMU Garnet Team (plus various others, see LICENSE)")
+  :author "CMU Garnet Team (plus various others, see LICENSE)"
+  :components
+  ((:file "clx-compatability")
+   (:module gem-clx
+	    :pathname "src/gem"
+	    :components ((:file "x")))
+   (:module inter-clx
+	    :pathname "src/inter"
+	    :components ((:file "x-inter")))))
 
 (asdf:defsystem :garnet/xcb
   :description "Garnet with cl-xcb (pure Common Lisp X11) backend (work-in-progress)"
-  :depends-on (:alexandria :uiop :bordeaux-threads :cl-aa :cl-aa-misc
-               :cl-fad :cl-ppcre :cl-store :cl-vectors :trivial-features
-               :trivial-dump-core :cl-xcb)
+  :depends-on (:garnet/core :cl-xcb)
   :license "MIT-ish (also public domain, see LICENSE)"
   :author "Arthur Miller")
 
 (asdf:defsystem :garnet/wl
   :description "Garnet with Wayland (Wayflan) backend (work-in-progress)"
-  :depends-on (:alexandria :uiop :bordeaux-threads :cl-aa :cl-aa-misc
-               :cl-fad :cl-ppcre :cl-store :cl-vectors :trivial-features
-               :trivial-dump-core :wayflan)
+  :depends-on (:garnet/core :wayflan)
   :license "MIT-ish (also public domain, see LICENSE)"
   :author "Arthur Miller")
+
+;;; Default entrypoint for backward compatibility
+(asdf:defsystem :garnet
+  :description "Garnet GUI toolkit (c. 1990 look/feel) with default CLX backend"
+  :depends-on (:garnet/clx)
+  :license "MIT-ish (also public domain, see LICENSE)"
+  :author "CMU Garnet Team (plus various others, see LICENSE)")

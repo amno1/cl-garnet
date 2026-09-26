@@ -1632,47 +1632,38 @@ TITLE, CREATOR, FOR, COMMENT - Strings for header comments.
     (format t ">~%DefImage~%~%")))
 
 (defun print-image-info (image image-name)
-  ;; Need to have z-type images to get information from
-  (let* ((flip-p (unless (xlib:image-z-p image)
-		   (setf image (xlib:copy-image
-				image
-				:result-type 'xlib:image-z))))
-	 (width (xlib:image-width image))
-	 (height (xlib:image-height image))
-	 (a (xlib:image-z-pixarray image)))
-    (print-bit-array image-name a width height flip-p)))
+  (let* ((root (or gem:*root-window* (g-value gem:device-info :current-root)))
+         (a (gem:image-to-array root image)))
+    (multiple-value-bind (width height) (gem:image-size root image)
+      (print-bit-array image-name a width height nil))))
 
 (defun print-piximage-info (image image-name)
-  (let* ((width (xlib:image-width image))
-	 (height (xlib:image-height image))
-	 (a (xlib:image-z-pixarray image))
-	 (max-col (- width 1))  ; dotimes is 0-based
-	 (color-alist '())
-	 )
-    (format T "/~A <~%" image-name)
-    (dotimes (row height)
-      (dotimes (col width)
-	(let* ((digit (if (> col max-col) 0 (aref a row col)))
-	       (rgb (cdr (assoc digit color-alist))))
-	  (cond
-	    (rgb
-	     (format T "~2,'0X" (first rgb))
-	     (format T "~2,'0X" (second rgb))
-	     (format T "~2,'0X" (third rgb)))
-	    (t (let* ((xcolor (car (xlib:query-colors
-				    gem::*default-x-colormap* (list digit))))
-		      (red (inter:clip-and-map
-			    (xlib:color-red xcolor) 0 1 0 255))
-		      (green (inter:clip-and-map
-			      (xlib:color-green xcolor) 0 1 0 255))
-		      (blue (inter:clip-and-map
-			     (xlib:color-blue xcolor) 0 1 0 255)))
-		 (push (list digit red green blue) color-alist)
-		 (format T "~2,'0X" red)
-		 (format T "~2,'0X" green)
-		 (format T "~2,'0X" blue))))))
-      (terpri))
-    (format t ">~%def~%~%")))
+  (let* ((root (or gem:*root-window* (g-value gem:device-info :current-root)))
+         (a (gem:image-to-array root image))
+         (color-alist '()))
+    (multiple-value-bind (width height) (gem:image-size root image)
+      (let ((max-col (- width 1)))
+        (format T "/~A <~%" image-name)
+        (dotimes (row height)
+          (dotimes (col width)
+            (let* ((digit (if (> col max-col) 0 (aref a row col)))
+                   (rgb (cdr (assoc digit color-alist))))
+              (cond
+                (rgb
+                 (format T "~2,'0X" (first rgb))
+                 (format T "~2,'0X" (second rgb))
+                 (format T "~2,'0X" (third rgb)))
+                (t (multiple-value-bind (r g b)
+                       (gem:query-color root digit)
+                     (let ((red (inter:clip-and-map (or r 0) 0 1 0 255))
+                           (green (inter:clip-and-map (or g 0) 0 1 0 255))
+                           (blue (inter:clip-and-map (or b 0) 0 1 0 255)))
+                       (push (list digit red green blue) color-alist)
+                       (format T "~2,'0X" red)
+                       (format T "~2,'0X" green)
+                       (format T "~2,'0X" blue)))))))
+          (terpri))
+        (format t ">~%def~%~%")))))
 
 ; Works for either filling-styles or line-styles
 (defun print-color-info (style ground)
