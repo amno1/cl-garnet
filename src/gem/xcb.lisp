@@ -565,11 +565,12 @@ staged."
          (and conn
               (let ((wm-protocols (xcb:intern-atom-id conn "WM_PROTOCOLS"))
                     (wm-delete (xcb:intern-atom-id conn "WM_DELETE_WINDOW")))
-                (and (= type wm-protocols)
+                ;; EQL, not =: TYPE is :TIMER_EVENT for Garnet's timer messages.
+                (and (eql type wm-protocols)
                      (let ((atom-val (if (vectorp data)
                                          (aref data 0)
                                          (if (listp data) (car data) data))))
-                       (= atom-val wm-delete))))))))
+                       (eql atom-val wm-delete))))))))
 
 (defun xcb-create-window (parent-window
                           x y width height
