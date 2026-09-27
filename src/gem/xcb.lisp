@@ -578,6 +578,9 @@ staged."
                           user-specified-position-p
                           user-specified-size-p
                           override-redirect)
+  ;; VISIBLE is :NORMAL or :ICONIC, never NIL.  The window is not mapped here:
+  ;; Opal maps it afterwards when its :VISIBLE slot is true, as with CLX.
+  (declare (ignore visible))
   (let* ((display-info (g-value parent-window :display-info))
          (conn (display-info-display display-info))
          (screen (display-info-screen display-info))
@@ -636,10 +639,6 @@ staged."
 
     ;; Register in lookup table
     (xcb-set-drawable-to-window parent-window wid)
-
-    ;; Map if visible requested
-    (when visible
-      (xcb:map-window conn wid))
 
     wid))
 
