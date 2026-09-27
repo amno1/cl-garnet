@@ -488,7 +488,7 @@
 
 (asdf:defsystem :garnet/xcb
   :description "Garnet with clxcb (pure Common Lisp X11) backend (work-in-progress)"
-  :depends-on (:garnet/core :clxcb "clxcb/keysyms" :xcb-truetype)
+  :depends-on (:garnet/core :clxcb "clxcb/keysyms" :xcb-truetype :trivial-garbage)
   :license "MIT-ish (also public domain, see LICENSE)"
   :author "Arthur Miller"
   :components
