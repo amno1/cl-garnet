@@ -2671,14 +2671,15 @@ Example:
  (base-type-for 'bitmap-or-nil) ==>
  (OR NULL (IS-A-P OPAL:BITMAP))
 "
-  (let* ((name (if (symbolp type-descriptor) (symbol-name type-descriptor)))
-	 (code (gethash name kr::types-table)))
-    (when name
-      (maphash #'(lambda (key value)
-		   (when (and (eq value code)
-			    (not (stringp key)))
+  (with-types-table-lock-held (types-table)
+    (let* ((name (if (symbolp type-descriptor) (symbol-name type-descriptor)))
+	   (code (gethash name types-table)))
+      (when name
+	(maphash #'(lambda (key value)
+		     (when (and (eq value code)
+				(not (stringp key)))
 		       (return-from get-type-definition key)))
-	       kr::types-table))))
+		 types-table)))))
 
 
 
