@@ -606,7 +606,7 @@
 		 (set-display-slots agg a-window T))
 	       (setf (win-update-info-old-aggregate win-info) agg)
 	       (if (and old-agg (null agg))
-		 (gem:clear-area a-window drawable)))))
+		 (gem:clear-area a-window)))))
 	  (:parent
 	   ;; not checked
 	   (let ((old-parent (g-value a-window :old-parent))
