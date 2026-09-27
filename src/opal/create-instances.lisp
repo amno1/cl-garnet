@@ -896,14 +896,16 @@ avoiding wasted objects.
 
 
 (create-instance 'ARROW-CURSOR bitmap
-  (:constant :image)
-  ;; Have to delay Get-Garnet-Bitmap from being executed before device
-  ;; is initialized
-  (:image (o-formula (Get-Garnet-Bitmap "garnet.cursor"))))
+  ;; The bitmap can only be read once a device is initialized.  Backends
+  ;; are loaded after this file, and the formula may be evaluated before
+  ;; that, so depend on the current device: KR then recomputes the image
+  ;; when a backend sets it.
+  (:image (o-formula (progn (gv gem:device-info :current-device)
+			    (Get-Garnet-Bitmap "garnet.cursor")))))
 
 (create-instance 'ARROW-CURSOR-MASK bitmap
-  (:constant :image)
-  (:image (o-formula (Get-Garnet-Bitmap "garnet.mask"))))
+  (:image (o-formula (progn (gv gem:device-info :current-device)
+			    (Get-Garnet-Bitmap "garnet.mask")))))
 
 (defparameter Arrow-Pair (cons ARROW-CURSOR ARROW-CURSOR-MASK))
 
