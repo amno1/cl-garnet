@@ -603,6 +603,9 @@
 
 (export 'clwin)
 
+;; Created by MAKE-CLWIN, which checks BOUNDP first; declared unbound here.
+(defvar clwin)
+
 (defun make-clwin ()
   (when (or (not (boundp 'clwin))
 	    (not (schema-p clwin)))

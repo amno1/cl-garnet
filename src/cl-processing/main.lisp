@@ -2,6 +2,19 @@
 
 (defparameter *width* nil)
 (defparameter *height* nil)
+(defparameter *current-line-style* nil)
+(defparameter *current-drawable* nil)
+(defparameter *current-stroke-color* nil)
+(defparameter *default-size-and-posision*
+  '(:left 10 :top 10 :width 400 :height 300))
+(defparameter *current-size-and-posision* *default-size-and-posision*)
+(defparameter *default-background-color*
+  opal:black)
+(defparameter *current-background-color* *default-background-color*)
+(defparameter *default-fill-color*
+  opal:white)
+(defparameter *current-fill-color* *default-background-color*)
+(defparameter *win* *default-background-color*)
 
 (defun size (width height)
   (setf *width* width)
@@ -47,20 +60,6 @@
 	  (:green (/ g 255.0))
 	  (:blue (/ b 255.0))
 	  (:red (/ r 255.0)))))
-
-(defparameter *current-line-style* nil)
-(defparameter *current-drawable* nil)
-(defparameter *current-stroke-color* nil)
-(defparameter *default-size-and-posision*
-  '(:left 10 :top 10 :width 400 :height 300))
-(defparameter *current-size-and-posision* *default-size-and-posision*)
-(defparameter *default-background-color*
-  opal:black)
-(defparameter *current-background-color* *default-background-color*)
-(defparameter *default-fill-color*
-  opal:white)
-(defparameter *current-fill-color* *default-background-color*)
-(defparameter *win* *default-background-color*)
 
 (defun create-polyline (points)
   (let* ((fill-style (create-instance nil opal:filling-style
@@ -115,18 +114,3 @@
   (s-value win :aggregate (create-instance 'agg opal:aggregate))
   (opal:add-component agg *current-drawable*)
   (opal:update win))
-
-(defun modify-processing-window ()
-  ;; Opal also strives to make it easy to change the picture.  To change
-  ;; the x position of the rectangle only requires setting the value of
-  ;; the :left slot;  Opal handles the refresh:
-
-  ;; change the position
-  (s-value HELLO :left 50)  
-
-  ;; cause the change to be visible
-  (opal:update WIN)
-
-  (create-instance 'opal:line-style opal:graphic-quality
-    (:background-color opal:black)
-    (:forground-color opal:black)))
