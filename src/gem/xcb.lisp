@@ -867,13 +867,27 @@ staged."
           *white*)))
 
 (defun xcb-colormap-property (root-window property &optional a b c)
-  (declare (ignore root-window a b c))
-  (case property
-    (:color-lookup (values 0 0 0))
-    (:make-color 0)))
+  "Colors on a 24-bit TrueColor visual, with pixels #xRRGGBB as elsewhere in
+this backend, so a color is simply its pixel.  :MAKE-COLOR takes red, green
+and blue from 0 to 1 and returns the pixel; :ALLOC-COLOR returns it as is;
+:QUERY-COLORS returns a pixel's 16-bit red, green and blue."
+  (declare (ignore root-window)
+           (optimize (speed 3) (debug 0) (safety 1)))
+  (flet ((channel (x) (max 0 (min 255 (round (* 255 x))))))
+    (case property
+      (:color-lookup (values 0 0 0))
+      (:make-color
+       (logior (ash (channel a) 16) (ash (channel b) 8) (channel c)))
+      (:alloc-color a)
+      (:query-colors
+       (values (* 257 (ldb (byte 8 16) a))
+               (* 257 (ldb (byte 8 8)  a))
+               (* 257 (ldb (byte 8 0)  a))))
+      (t (error "Unknown property ~S in gem::xcb-colormap-property" property)))))
 
 (defun xcb-query-color (root-window pixel)
-  (declare (ignore root-window))
+  (declare (ignore root-window)
+           (optimize (speed 3) (debug 0) (safety 1)))
   (values (ash (logand pixel #xff0000) -16)
           (ash (logand pixel #x00ff00) -8)
           (logand pixel #x0000ff)))
@@ -1484,6 +1498,49 @@ are already padded, or when it is not an octet array of whole rows."
                                    :start2 (* y src-bpl)
                                    :end2 (* (1+ y) src-bpl)))))))))
 
+(defun xcb-bits-per-pixel (conn depth)
+  "Bits per pixel the server uses for images of DEPTH (1 for bitmaps)."
+  (if (= depth 1)
+      1
+      (let ((format (find depth (xcb:conn-pixmap-formats conn) :key #'xcb:depth)))
+        (if format
+            (slot-value format 'xcb::bits-per-pixel)
+            (depth-to-bits-per-pixel depth)))))
+
+(defun xcb-pack-pixels (conn pixels depth)
+  "Pack PIXELS, a (HEIGHT WIDTH) array of pixel values, into an octet vector
+with byte-aligned rows at the server's bits per pixel for DEPTH, in its image
+byte order.  Bitmaps are packed LSB-first, as elsewhere in this backend."
+  (destructuring-bind (height width) (array-dimensions pixels)
+    (let* ((bpp (xcb-bits-per-pixel conn depth))
+           (bytes-per-pixel (floor bpp 8))
+           (bpl (ceiling (* width bpp) 8))
+           (msb-first (eql (xcb:conn-image-byte-order conn) 1))
+           (out (make-array (* bpl height) :element-type '(unsigned-byte 8)
+                                           :initial-element 0)))
+      (dotimes (y height out)
+        (dotimes (x width)
+          (let ((pixel (or (aref pixels y x) 0))
+                (row (* y bpl)))
+            (if (= bpp 1)
+                (when (logbitp 0 pixel)
+                  (setf (ldb (byte 1 (mod x 8)) (aref out (+ row (floor x 8)))) 1))
+                (dotimes (i bytes-per-pixel)
+                  (setf (aref out (+ row (* x bytes-per-pixel)
+                                     (if msb-first (- bytes-per-pixel i 1) i)))
+                        (ldb (byte 8 (* 8 i)) pixel))))))))))
+
+(defun xcb-image-upload-data (conn data height depth)
+  "Return image DATA as octets ready for PutImage: arrays of pixel values are
+packed first, then rows are padded to the server's scanline pad."
+  (xcb-pad-image-rows conn
+                      (if (and (= (array-rank data) 2)
+                               (not (equal (array-element-type data)
+                                           '(unsigned-byte 8))))
+                          (xcb-pack-pixels conn data depth)
+                          data)
+                      height depth))
+
 (defun xcb-create-pixmap (root-window width height depth
                           &optional image bitmap-p data-array)
   (declare (ignore data-array))
@@ -1516,7 +1573,7 @@ are already padded, or when it is not an octet array of whole rows."
                                             +image-format-z-pixmap+)
                                    pid tmp-gc
                                    width height 0 0 0 img-depth
-                                   (xcb-pad-image-rows conn data height img-depth))
+                                   (xcb-image-upload-data conn data height img-depth))
             (xcb:free-gc conn tmp-gc)))))
     pid))
 
@@ -1552,7 +1609,7 @@ double buffer of, and its buffer GC is freed as well."
                                         +image-format-z-pixmap+)
                                to tmp-gc
                                width height 0 0 0 img-depth
-                               (xcb-pad-image-rows conn data height img-depth))
+                               (xcb-image-upload-data conn data height img-depth))
         (xcb:free-gc conn tmp-gc)))))
 
 (defun xcb-create-image (root-window width height depth from-data-p
@@ -1566,11 +1623,10 @@ double buffer of, and its buffer GC is freed as well."
                    (make-array (list height width)
                                :element-type (pixarray-element-type bpp)
                                :initial-element
-                               (if (numberp color-or-data)
-                                   color-or-data
-                                   (if color-or-data
-                                       (g-value color-or-data :colormap-index)
-                                       *white*))))))
+                               ;; Only the low BPP bits fit the array (a
+                               ;; bitmap stores white as 1).
+                               (ldb (byte bpp 0)
+                                    (xcb-color-to-pixel color-or-data *white*))))))
     (make-xcb-image :width width
                     :height height
                     :depth depth
@@ -1708,7 +1764,7 @@ double buffer of, and its buffer GC is freed as well."
                                         +image-format-z-pixmap+)
                                drawable gc-xid
                                width height left top 0 depth
-                               (xcb-pad-image-rows conn data height depth))))))
+                               (xcb-image-upload-data conn data height depth))))))
 
 (defun xcb-window-to-image (window left top width height)
   "Create an XCB-IMAGE from a region of a window."
