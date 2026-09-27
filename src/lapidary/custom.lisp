@@ -68,7 +68,7 @@
 (defun c32 (&optional (obj nil) (slot nil) 
 	    &key (left nil) (top nil) (c32-custom-function nil)
 	         (prompt "Press OK when you're finished with C32"))
-  (declare (special *constraint-gadget* c32::lapidary-p
+  (declare (special *constraint-gadget* c32::*lapidary-p*
 		    c32::*all-windows* c32::ask-object
 		    c32::*current-panel-set*
 		    *constraint-gadget-query-window*
@@ -108,7 +108,7 @@
 		 (schema-p c32::ask-object))
 	    (c32::create-ask-object))
 
-    (setf c32::lapidary-p t)
+    (setf c32::*lapidary-p* t)
     
     ;; set the *top-level-agg*, *custom-function*, and *c32-custom-function*
     ;; global variables in c32

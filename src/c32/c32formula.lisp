@@ -210,7 +210,7 @@
 
 
 (defun Do-Form-Cancel (gadget item)
-  (if lapidary-p
+  (if *lapidary-p*
     ;; Specialized version.
     (lapidary-Do-Form-Cancel gadget item)
     ;; Stand-alone version.
@@ -222,7 +222,7 @@
 
 
 (defun Do-Form-Ok (gadget item)
-  (if lapidary-p
+  (if *lapidary-p*
     ;; Specialized version.
     (lapidary-Do-Form-Ok gadget item)
     ;; Stand-alone version.

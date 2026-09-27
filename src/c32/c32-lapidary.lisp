@@ -18,7 +18,7 @@
 (defun c32-ok-function ()
   ;; allow no windows to be selected by the obj-find interactor
   (s-value (g-value c32::ask-object :obj-find) :window nil)
-  (setf lapidary-p nil)
+  (setf *lapidary-p* nil)
   (dolist (win *All-windows*)
     (if (schema-p win)
       (s-value win :visible nil)))
@@ -29,8 +29,7 @@
 
 (defun lapidary-QuitFunc (gadget sel)
   (declare (ignore gadget sel))
-  (declare (special lapidary-p))
-  (if lapidary-p
+  (if *lapidary-p*
       (c32-ok-function)
       (progn
 	(do-stop)
