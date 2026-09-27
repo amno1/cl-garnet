@@ -55,9 +55,6 @@
 ;; because spaces that are garbage and spaces that are data tend to look
 ;; similar.
 
-(defun generate-default-pixmap (height width)
-  (gem:create-image-array nil width height depth))
-
 (defun run-read-xpm-file ()
   (let ((pathname "/home/rett/dev/garnet/garnet-bitbucket/lib/pixmaps/eye1.xpm")
 	(root-window nil))
