@@ -54,8 +54,10 @@
 	 (format t " *OFF* (production version)")
 	 )
     (format t " ***~%")
-    (format t "*** using the following compiler policy: ***~%")
-    (format t "~A~%" cl-user::default-garnet-proclaim)))
+    ;; DEFAULT-GARNET-PROCLAIM is only defined by some loaders.
+    (when (boundp 'cl-user::default-garnet-proclaim)
+      (format t "*** using the following compiler policy: ***~%")
+      (format t "~A~%" (symbol-value 'cl-user::default-garnet-proclaim)))))
 
 
 (defun garnet-restart-function ()
@@ -116,10 +118,6 @@
     (when verbose (format t "Garbage collecting..."))
     (sb-ext:gc :full t)
     (when verbose (format t "collected.~%")))
-
-  (setf garnet-user::*herald-items* nil)
-  (setf (getf garnet-user::*herald-items* :garnet)
-	`("    Garnet Version " ,common-lisp-user::garnet-version-number))
 
   (when verbose (format t "Saving image..."))
   (setf sb-ext:*init-hooks*

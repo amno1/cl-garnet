@@ -40,6 +40,10 @@
 
 (in-package "OPAL")
 
+;; GEM:DEVICE-INFO is created by CREATE-SCHEMA in src/gem/gem.lisp, but the GEM
+;; module depends on OPAL-BOOT, so this file and utils.lisp are compiled first.
+(declaim (special gem:device-info))
+
 ;;; General Use
 
 

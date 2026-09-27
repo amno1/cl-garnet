@@ -13,6 +13,10 @@
 
 (declaim (special save-time-do-not-dump-slots))
 
+;; Set by loading files saved by Lapidary; see save-restore.lisp.
+(declaim (special common-lisp-user::*used-garnet-version*
+		  common-lisp-user::*garnet-objects-just-created*))
+
 (setf common-lisp-user::*Used-Garnet-Version* "2.0")
 
 ;;;

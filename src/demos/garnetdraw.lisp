@@ -37,6 +37,8 @@
 ;; 		  CREATOR-DOUBLEARROWLINE TOP-AGG COLOR-PALETTE))
 
 (defvar *draw-agg*)
+;; Set by loading a file saved by Gilt or GarnetDraw; see also gilt.lisp.
+(declaim (special common-lisp-user::*garnet-object-just-created*))
 (defvar *grid-db*)
 (defvar *q-box*)
 (defvar *read-db*)
