@@ -267,7 +267,10 @@ because the new value is not one the server needs (a stipple of 0).
          t))
       ((listp value)
        (unless (equal value (gem-gc-clip-mask gem-gc))
-         (setf (gem-gc-clip-mask gem-gc) value)
+         ;; Cache a copy: Opal reuses its clip-mask lists and overwrites them
+         ;; in place (BBOX-TO-CLIP-MASK), so caching VALUE itself would make
+         ;; every later mask compare EQUAL to the cache and never be sent.
+         (setf (gem-gc-clip-mask gem-gc) (copy-list value))
          (let ((rects nil))
            (do ((cur value (cddddr cur)))
                ((null cur))
