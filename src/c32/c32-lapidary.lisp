@@ -157,8 +157,8 @@
 		       "should be a parameter, please edit the "
 		       "formula and use either 'Insert Ref From Spread...' "
 		       "or 'Insert Ref from Mouse' to insert the reference. "
-		       "Do you want to edit the formula?"
-		  expr))
+		       "Do you want to edit the formula?")
+		  expr)
 	 ;; else the expr is not a view-object, so return nil
 	 nil)))))
 

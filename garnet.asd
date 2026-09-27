@@ -488,9 +488,13 @@
 
 (asdf:defsystem :garnet/xcb
   :description "Garnet with clxcb (pure Common Lisp X11) backend (work-in-progress)"
-  :depends-on (:garnet/core :clxcb)
+  :depends-on (:garnet/core :clxcb "clxcb/keysyms" :xcb-truetype)
   :license "MIT-ish (also public domain, see LICENSE)"
-  :author "Arthur Miller")
+  :author "Arthur Miller"
+  :components
+  ((:module gem-xcb
+	    :pathname "src/gem"
+	    :components ((:file "xcb")))))
 
 (asdf:defsystem :garnet/wl
   :description "Garnet with Wayland (Wayflan) backend (work-in-progress)"

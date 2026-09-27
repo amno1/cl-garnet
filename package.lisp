@@ -127,9 +127,16 @@
 	   init-device
 	   make-display-info))
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (unless (find-package :xcb-const)
+    (make-package :xcb-const :use (quote ()))))
+
 (defpackage :gem
-  (:use :common-lisp :kr :kr-debug)
-  (:export *black*
+  (:use :common-lisp :kr :kr-debug :xcb-const)
+  (:export *root-window*
+	   BATCH-CHANGES
+	   DEVICE-BATCH-CHANGES
+	   *black*
 	   *color-screen-p*
 	   *exposure-event-mask*
 	   *fixed-font-family*

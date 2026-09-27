@@ -262,7 +262,7 @@
   (:font small-font)
   (:string "..."))
 
-(defparameter *dot-dot-width* (g-value dot-dot-dot :width))
+(defparameter *dot-dot-width* (or (and (g-value gem:device-info :current-root) (ignore-errors (g-value dot-dot-dot :width))) 15))
 
 (create-instance 'scrolling-input-text-edit inter:text-interactor
    (:window (o-formula (gvl :operates-on :window)))

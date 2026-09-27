@@ -529,7 +529,7 @@
              (setf obj (identify window x y garnet-code verbose)))
            )
 
-         #-apple
+         #+clx
          (progn
 	   ;; first, throw away any pending events
 	   (xlib:event-case (gem::*default-x-display* :discard-p t :timeout 1)
@@ -539,7 +539,7 @@
 	    (display-info :discard-p t :force-output-p t)
 	    (button-press
 	     (event-window x y state code event-key)
-	     (setf window (getf (xlib:drawable-plist event-window) :garnet))
+	     (setf window (gem:drawable-to-window (g-value gem:device-info :current-root) event-window))
 	     (setf loc-x x)
 	     (setf loc-y y)
 	     (setf garnet-code (gem:translate-mouse-character
@@ -548,7 +548,7 @@
 	     t)
 	    (key-press
 	     (event-window x y state code time)
-	     (setf window (getf (xlib:drawable-plist event-window) :garnet))
+	     (setf window (gem:drawable-to-window (g-value gem:device-info :current-root) event-window))
 	     (setf loc-x x)
 	     (setf loc-y y)
 	     (setf garnet-code (gem::translate-character event-window x y state code time))
@@ -559,7 +559,13 @@
 		   ))))
 	   (when suspend-process
 	     (opal:launch-main-event-loop-process))
-	   ))
+	   )
+         #-(or apple clx)
+         (progn
+           (warn "ident is not supported on this backend yet.")
+           (when suspend-process
+             (opal:launch-main-event-loop-process)))
+         )
     (list obj window loc-x loc-y garnet-code)))
 
 
@@ -691,7 +697,8 @@
 	     (or (is-a-p value opal:font)
 		 (is-a-p value opal:font-from-file))))
     (:xfont
-     (typep value 'xlib:font))
+     #+clx (typep value 'xlib:font)
+     #-clx nil)
     (:text-extents
 	(listp value))
     (:cursor-index
@@ -704,8 +711,9 @@
 	     (not (dolist (cut-string-member value)
 		    (unless (opal::cut-string-p cut-string-member) (return T))))))
     (:image			;; bitmap
-     #-apple (typep value 'xlib:image) ;; was (xlib::image-p value)
-     #+apple (eq gem::*MAC-BUFFER* (class-of value)))
+     #+clx (typep value 'xlib:image) ;; was (xlib::image-p value)
+     #+apple (eq gem::*MAC-BUFFER* (class-of value))
+     #-(or clx apple) nil)
     (:aggregate
 	(or (null value)
 	    (is-a-p value opal:aggregate)))

@@ -521,7 +521,10 @@
   (kr-send inter :after-cursor-moves-func inter string-object)) 
 
 (defparameter Shift-Bit
-  (gem:create-state-mask (g-value gem:device-info :current-root) :shift))
+  (let ((root (g-value gem:device-info :current-root)))
+    (if (and root (g-value root :methods))
+        (gem:create-state-mask root :shift)
+        1)))
 
 ;; event is a mouse event, not a move, see if down or shift-down
 (defun Handle-Move-Cursor (an-interactor string-object event)

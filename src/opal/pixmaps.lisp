@@ -107,7 +107,7 @@
 	(let ((bitmap-p (not (g-value color :color-p)))
 	      ;; RGA This next will lose on a Mac.
 	      ;; ***TODO: Fix this.***
-	      (depth (gem::x-window-depth root-window))
+	      (depth (gem:window-depth root-window))
 	      width height ncolors left-pad chars-per-pixel)
 	  ;; DZG (declare (type (or null xlib:card16) width height)
 	  ;; DZG	 (type (or null xlib:image-depth) depth)
@@ -304,7 +304,7 @@
       (let ((bitmap-p (not (g-value color :color-p)))
 	    ;; RGA This next will lose on a Mac.
 	    ;; ***TODO: Fix this.***
-	    (depth (gem::x-window-depth root-window))
+	    (depth (gem:window-depth root-window))
 	    width height ncolors left-pad chars-per-pixel)
 	;; DZG (declare (type (or null xlib:card16) width height)
 	;; DZG	 (type (or null xlib:image-depth) depth)
@@ -586,7 +586,7 @@
 			    &optional
 			      color
 			      (window (g-value gem:device-info :current-root)))
-  (let ((depth (gem::x-window-depth window)))
+  (let ((depth (gem:window-depth window)))
     ;; Passing the display depth as the `bits-per-pixel' optional
     ;; parameter seems to avoid problems of displays where the depth
     ;; of the pixmap formats is different from the bits-per-pixel of

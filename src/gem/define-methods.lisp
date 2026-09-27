@@ -183,14 +183,14 @@
 
 (gem-method :CHECK-WM-DELETE-WINDOW (root-window type data format))
 
-(gem-method :BATCH-CHANGES (root-window drawable function))
+(gem-method :DEVICE-BATCH-CHANGES (root-window drawable function))
 
 (gem-method :QUERY-COLOR (root-window pixel))
 
 ;;; Macro for batching window changes portably across devices
 (defmacro batch-changes (drawable-form &body body)
   (let ((drawable (if (listp drawable-form) (car drawable-form) drawable-form)))
-    `(gem:batch-changes (or gem:*root-window* (g-value gem:device-info :current-root))
+    `(gem:device-batch-changes (or gem:*root-window* (g-value gem:device-info :current-root))
                         ,drawable
                         (lambda () ,@body))))
 

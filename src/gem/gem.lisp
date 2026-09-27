@@ -20,12 +20,46 @@
 ;; copy-display-info, display-info-display, display-info-screen,
 ;; display-info-root-window, display-info-line-style-gc, and
 ;; display-info-filling-style-gc.
+(defun display-info-printer (s stream ignore)
+  (declare (ignore ignore))
+  (format stream "#G<GEM-DISPLAY-INFO ~A>" (display-info-display s)))
+
 (defstruct (display-info (:print-function display-info-printer))
   display
   screen
   root-window
   line-style-gc
   filling-style-gc)
+
+(defparameter *update-lock*
+  (bordeaux-threads:make-recursive-lock "garnet-update-lock")
+  "Global recursive lock for Garnet window updates.")
+
+(defvar *screen-width* 1024
+  "Screen width in pixels.")
+
+(defvar *screen-height* 768
+  "Screen height in pixels.")
+
+(defvar *white* 1
+  "White pixel value.")
+
+(defvar *black* 0
+  "Black pixel value.")
+
+(defvar *color-screen-p* :true-color
+  "Screen color capability.")
+
+(defvar *read-write-colormap-cells-p* nil
+  "True if colormap cells can be read and written.")
+
+(defvar *exposure-event-mask*
+  ;; KeyPress(1) | ButtonPress(4) | Exposure(32768) | StructureNotify(131072)
+  (logior 1 4 32768 131072)
+  "Default event mask for newly created Garnet windows.")
+
+(defvar *function-alist* nil
+  "A-list mapping GEM draw functions to backend raster op codes.")
 
 (defvar *method-names* nil
   "Holds the method names.  This is used to create the Gem interface macros.")
@@ -97,9 +131,106 @@
 ;; XXX FMG the above appears to be incorrect: the following generates a defun
 ;; while the commented out code below generates a defmacro (and the one below
 ;; that generates a defun as well).
+(defun fallback-gem-method (method-name args)
+  "Provide safe fallback responses for GEM queries when no backend device is yet attached."
+  (case method-name
+    (:text-extents
+     (let* ((string (caddr args))
+            (len (cond ((stringp string) (length string))
+                       ((characterp string) 1)
+                       (t 1))))
+       (values (* len 8) 10 2 0 (* len 8) 10 2)))
+    (:character-width
+     8)
+    (:text-width
+     (let* ((string (caddr args))
+            (len (cond ((stringp string) (length string))
+                       ((characterp string) 1)
+                       (t 1))))
+       (* len 8)))
+    (:max-character-ascent
+     10)
+    (:max-character-descent
+     2)
+    (:font-max-min-width
+     (values 8 8))
+    (:font-name-p
+     nil)
+    (:font-exists-p
+     t)
+    (:font-to-internal
+     nil)
+    (:create-state-mask
+     (case (cadr args)
+       (:shift 1)
+       (:lock 2)
+       (:control 4)
+       (:mod-1 8)
+       (:mod-2 16)
+       (:mod-3 32)
+       (:mod-4 64)
+       (:mod-5 128)
+       (t 0)))
+    (:black-white-pixel
+     (values 0 1))
+    (:color-to-index
+     0)
+    (:colormap-property
+     nil)
+    (:device-batch-changes
+     (when (functionp (cadr args))
+       (funcall (cadr args))))
+    (:drawable-to-window
+     nil)
+    (:drawable-equal
+     (eql (cadr args) (caddr args)))
+    (:check-wm-delete-window
+     nil)
+    (:window-depth
+     24)
+    (:create-image-array
+     (let ((w (or (cadr args) 1))
+           (h (or (caddr args) 1)))
+       (make-array (list (max 1 h) (max 1 w)) :initial-element 0)))
+    (:create-image
+     (let ((w (or (cadr args) 1))
+           (h (or (caddr args) 1)))
+       (make-array (list (max 1 h) (max 1 w)) :initial-element 0)))
+    (:create-pixmap
+     0)
+    (:build-pixmap
+     0)
+    (:image-size
+     (values (or (cadr args) 16) (or (caddr args) 16)))
+    (otherwise
+     nil)))
+
 (defmacro gem-method (method-name (&rest args))
-  (let ((function-name (intern (symbol-name method-name) (find-package "GEM")))
-	(has-rest (find '&rest args)))
+  (let* ((function-name (intern (symbol-name method-name) (find-package "GEM")))
+	 (has-rest (find '&rest args))
+	 (processed-args
+	   (if (or has-rest (intersection '(&key &optional) args))
+	       ;; We must manipulate the arguments list.
+	       (do ((head args (cdr head))
+		    (in-key NIL)
+		    (final nil))
+		   ((null head)
+		    (nreverse final))
+		 (case (car head)
+		   ((&optional &rest))
+		   (&key
+		    (setf in-key T))
+		   (T
+		    (let ((symbol (car head)))
+		      (if (listp symbol)
+			  (setf symbol (car symbol)))
+		      (if in-key
+			  (push (intern (symbol-name symbol)
+					(find-package "KEYWORD"))
+				final))
+		      (push symbol final)))))
+	       ;; Arguments list is OK as is.
+	       args)))
     `(progn
        ;; Make sure the method name is defined when we load this.
        (find-or-create-name ,method-name)
@@ -107,31 +238,13 @@
        ;; its first argument (a window) to find the appropriate
        ;; device-specific argument.
        (defun ,function-name (,@args)
-	 (,(if has-rest 'APPLY 'FUNCALL)
-	   (aref (g-value ,(car args) :METHODS)
-		 ,(find-or-create-name method-name))
-	   ,@(if (or has-rest (intersection '(&key &optional) args))
-		 ;; We must manipulate the arguments list.
-		 (do ((head args (cdr head))
-		      (in-key NIL)
-		      (final nil))
-		     ((null head)
-		      (nreverse final))
-		   (case (car head)
-		     ((&optional &rest))
-		     (&key
-		      (setf in-key T))
-		     (T
-		      (let ((symbol (car head)))
-			(if (listp symbol)
-			    (setf symbol (car symbol)))
-			(if in-key
-			    (push (intern (symbol-name symbol)
-					  (find-package "KEYWORD"))
-				  final))
-			(push symbol final)))))
-		 ;; Arguments list is OK as is.
-		 args)))
+	 (let* ((dev-target (or ,(car args) (and (boundp 'device-info) (kr:schema-p device-info) (g-value device-info :current-root)) *root-window*))
+		(methods (and dev-target (kr:schema-p dev-target) (g-value dev-target :METHODS)))
+		(idx ,(find-or-create-name method-name))
+		(fn (and methods (< idx (length methods)) (aref methods idx))))
+	   (if fn
+	       (,(if has-rest 'APPLY 'FUNCALL) fn ,@processed-args)
+	       (fallback-gem-method ,method-name (list ,@processed-args)))))
        ;; Export the interface function from the Gem package.
        (eval-when (:execute :load-toplevel :compile-toplevel) (export ',function-name)))))
 
@@ -198,13 +311,17 @@
 ;; for all calls to Gem which occur in places where explicit device
 ;; information is not available. The :active-devices slot contains the
 ;; list of all the devices that have been initialized.
-(create-schema 'device-info
-	       (:current-root NIL)
-	       (:active-devices NIL))
-
-;; This schema stands for the top-level root window for the X device.
+;; This schema stands for the top-level root window for the default device.
 ;; We use create-schema to prevent any :initialize method from firing.
 (defvar *root-window* (create-schema nil (:is-a opal::window)))
+
+(defvar *dummy-display-info*
+  (make-display-info :root-window *root-window*))
+(s-value *root-window* :display-info *dummy-display-info*)
+
+(create-schema 'device-info
+	       (:current-root *root-window*)
+	       (:active-devices NIL))
 
 ;; This schema points to the root window, and contains the slot
 ;; :methods which names all existing Gem method.  The slot is copied
@@ -289,3 +406,13 @@
 ;;; window, or the main drawable otherwise.
 (defmacro the-drawable (window)
   `(or (g-local-value ,window :buffer) (g-value ,window :drawable)))
+
+(defun depth-to-bits-per-pixel (depth)
+  "Return a bits-per-pixel value valid for a given depth."
+  (cond
+    ((null depth) 32)
+    ((<= depth 1) 1)
+    ((<= depth 8) 8)
+    ((<= depth 16) 16)
+    ((<= depth 24) 32)
+    (t 32)))

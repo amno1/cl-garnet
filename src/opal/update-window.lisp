@@ -577,9 +577,10 @@ This is done to avoid unnecessary total updates."
 	(when (or total-p partial-p)
 	  (let* ((win-new-bbox (win-update-info-new-bbox win-info))
 		 (buffer (g-value a-window :buffer))
-		 (display-info (g-value a-window :display-info))
-		 (line-style-gc (display-info-line-style-gc display-info))
-		 (filling-style-gc (display-info-filling-style-gc display-info))
+		 (display-info (or (g-value a-window :display-info)
+				   (and (boundp 'gem::*dummy-display-info*) gem::*dummy-display-info*)))
+		 (line-style-gc (and display-info (display-info-line-style-gc display-info)))
+		 (filling-style-gc (and display-info (display-info-filling-style-gc display-info)))
 		 fastdraw-objects
 		 obj-update-slots-values
 		 obj-update-info)

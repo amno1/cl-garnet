@@ -60,10 +60,17 @@
 	(push (cons clx-mask modifier-name) *modifier-translations*))))
 
 (let ((root (g-value gem:device-info :current-root)))
-  (define-keyboard-modifier (gem:create-state-mask root :control) :control)
-  (define-keyboard-modifier (gem:create-state-mask root :mod-1) :meta)
-  (define-keyboard-modifier (gem:create-state-mask root :shift) :shift)
-  (define-keyboard-modifier (gem:create-state-mask root :lock) :lock))
+  (if (and root (g-value root :methods))
+      (progn
+        (define-keyboard-modifier (gem:create-state-mask root :control) :control)
+        (define-keyboard-modifier (gem:create-state-mask root :mod-1) :meta)
+        (define-keyboard-modifier (gem:create-state-mask root :shift) :shift)
+        (define-keyboard-modifier (gem:create-state-mask root :lock) :lock))
+      (progn
+        (define-keyboard-modifier 4 :control)
+        (define-keyboard-modifier 8 :meta)
+        (define-keyboard-modifier 1 :shift)
+        (define-keyboard-modifier 2 :lock))))
 
 ;;; end section snarfed from Hemlock
 
