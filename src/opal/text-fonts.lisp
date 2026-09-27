@@ -22,6 +22,21 @@
 
 (in-package "OPAL")
 
+;;; Font sizes for :small, :medium, :large and :very-large, in pixels and in
+;;; decipoints.  These are GEM symbols, used by backend-independent code
+;;; (PS-FONT-SIZE below) as well as by the backends, so they are defined here
+;;; in the core rather than in a backend.  This file is compiled before
+;;; src/gem/gem.lisp (the GEM module depends on OPAL-BOOT).
+(defvar *Small-Font-Size*      12)
+(defvar *Medium-Font-Size*     18)
+(defvar *Large-Font-Size*      24)
+(defvar *Very-Large-Font-Size* 32)
+
+(defvar *Small-Font-Point-Size*      120)
+(defvar *Medium-Font-Point-Size*     180)
+(defvar *Large-Font-Point-Size*      240)
+(defvar *Very-Large-Font-Point-Size* 320)
+
 ;; "/Courier", etc. are names of postscript fonts used by the printer.
 ;;
 (defun ps-font-name (family face)

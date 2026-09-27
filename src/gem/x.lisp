@@ -1565,15 +1565,7 @@ this display."
 (defvar *Serif-Font-Family*      "times")
 (defvar *Sans-Serif-Font-Family* "helvetica")
 
-(defvar *Small-Font-Size*      (ceiling (* scale-factor 12)))
-(defvar *Medium-Font-Size*     (ceiling (* scale-factor 18)))
-(defvar *Large-Font-Size*      (ceiling (* scale-factor 24)))
-(defvar *Very-Large-Font-Size* (ceiling (* scale-factor 32)))
-
-(defvar *Small-Font-Point-Size*      (ceiling (* scale-factor 120)))
-(defvar *Medium-Font-Point-Size*     (ceiling (* scale-factor 180)))
-(defvar *Large-Font-Point-Size*      (ceiling (* scale-factor 240)))
-(defvar *Very-Large-Font-Point-Size* (ceiling (* scale-factor 320)))
+;;; The font size variables are defined in src/opal/text-fonts.lisp.
 
 
 ;; Returns either a string which describes the font using X conventions,
