@@ -17,6 +17,8 @@
 
 (in-package :gilt)
 
+(defparameter Gilt-Version "V3.0")
+
 (defparameter *Run-Build-obj* NIL) ; the gadget that determines whether in
                                    ; build or run mode
 (defparameter *Selection-obj* NIL) ; The gadget that is the user's selection in
