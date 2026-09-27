@@ -654,7 +654,9 @@
     (setq opal::*inside-main-event-loop* NIL)
     (throw 'opal::exit-main-loop-exception t)))
 
-(defvar opal::*exit-main-event-loop-function* #'exit-main-event-loop
+;; DEFPARAMETER, not DEFVAR: opal/windows.lisp, which is loaded first, already
+;; defines this variable as NIL, and a DEFVAR here would leave it NIL.
+(defparameter opal::*exit-main-event-loop-function* #'exit-main-event-loop
   "This variable tells opal what function to call when you delete the
 last window, so that main-loop will be exited automatically.")
 
