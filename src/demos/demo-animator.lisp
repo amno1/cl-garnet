@@ -17,7 +17,9 @@
 
 (defvar pixmaps '())
 
-(when gem::*x11-server-available*
+;; Called from DO-GO rather than at load time: reading a pixmap needs an
+;; initialized device, and the backends are loaded after the demos.
+(defun load-pixmaps ()
   (setf pixmaps
 	(let (i filename pics)
 	  (format T "Loading pictures...")
@@ -47,6 +49,8 @@
 		  pixmap-button animator-circle animating-pixmap))
 
 (defun do-go (&key dont-enter-main-event-loop (double-buffered-p T))
+  (unless pixmaps
+    (load-pixmaps))
   (let (agg)
     ;;;create top-level window
     (create-instance 'TOP-WIN inter:interactor-window
