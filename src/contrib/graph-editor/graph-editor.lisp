@@ -25,6 +25,9 @@
 
 (in-package "GE")
 
+;; Created by DEFINE-CURSOR below.
+(declaim (special delete-cursor link-cursor unlink-cursor))
+
 ;;(use-package :kr)		;Garnet
 
 

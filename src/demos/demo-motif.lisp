@@ -39,12 +39,13 @@
 ;;                   "motif-scrolling-window-loader"))
 ;;     (common-lisp-user::garnet-load (concatenate 'string "gadgets:" file))))
 
-;; (declaim (special combo-box red-box green-box blue-box red-bar green-bar
-;; 		  blue-bar ground-buttons shade-slider shade-buttons
-;; 		  demo-motif-win color-buttons color-menu gauge-1
-;; 		  shade-box shade-box-border demo-motif-top-agg
-;; 		  blue-box-border green-box-border red-box-border
-;; 		  combo-box-border text-box-1 scroll-agg))
+;; Created by CREATE-INSTANCE inside DO-GO.
+(declaim (special combo-box red-box green-box blue-box red-bar green-bar
+		  blue-bar ground-buttons shade-slider shade-buttons
+		  demo-motif-win color-buttons color-menu gauge-1
+		  shade-box shade-box-border demo-motif-top-agg
+		  blue-box-border green-box-border red-box-border
+		  combo-box-border text-box-1 scroll-agg))
 
 
 (defparameter *fill-to-swap* (create-instance nil opal:default-filling-style

@@ -40,6 +40,10 @@
 
 (in-package :demo-schema-browser)
 
+;; Created by CREATE-INSTANCE inside functions below; declared here so that
+;; references compiled before those functions are known to be special.
+(declaim (special control-panel schema-browser-error-gadget))
+
 (defvar DEMO-SCHEMA-BROWSER-INIT
   (dolist (file '("radio-buttons-loader" "text-buttons-loader"
 		  "labeled-box-loader" "trill-device-loader"

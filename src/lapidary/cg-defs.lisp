@@ -16,6 +16,9 @@
 
 (in-package "GARNET-GADGETS")
 
+;; Created by CREATE-SCHEMA further down this file.
+(declaim (special *constraint-gadget*))
+
 (eval-when (:execute :load-toplevel :compile-toplevel)
   (export '(box-constraint-do-go
 	    box-constraint-do-stop

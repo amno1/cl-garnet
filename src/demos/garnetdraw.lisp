@@ -39,6 +39,11 @@
 (defvar *draw-agg*)
 ;; Set by loading a file saved by Gilt or GarnetDraw; see also gilt.lisp.
 (declaim (special common-lisp-user::*garnet-object-just-created*))
+;; Created by CREATE-INSTANCE inside functions below; declared here so that
+;; references compiled before those functions are known to be special.
+(declaim (special main-window main-menu tools-menu current-state draw-win
+		  top-draw-agg mover-grower polygon-maker palette-feedback
+		  create-or-edit save-win ps-read-win))
 (defvar *grid-db*)
 (defvar *q-box*)
 (defvar *read-db*)

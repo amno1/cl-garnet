@@ -12,6 +12,10 @@
 
 (in-package :xomax)
 
+;; Created by CREATE-INSTANCE inside functions below; declared here so that
+;; references compiled before those functions are known to be special.
+(declaim (special text1 text2 focus-inter mouse-inter))
+
 ;; Following are functions used in the menubar.  Each function is used
 ;; to control either a menu or a submenu item.
 

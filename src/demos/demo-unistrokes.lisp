@@ -33,6 +33,13 @@
 
 (in-package :DEMO-UNISTROKES)
 
+;; Created by CREATE-INSTANCE inside functions below; declared here so that
+;; references compiled before those functions are known to be special.
+(declaim (special top-win text-win text error-dialog load-dialog save-dialog
+		  red-line-4 orange-line-1 orange-line-2
+		  unistroke-icon-proto unistroke-icon-aggl unistroke-icon-win
+		  punctuation-icon-aggl))
+
 ;; objects created in do-go
 ;; (declaim (special TOP-WIN MAIN-MENU GESTURE-INTER ERROR-DIALOG QUIT-DIALOG
 ;; 		  SAVE-DIALOG LOAD-DIALOG TEXT TEXT-WIN UNISTROKE-ICON-WIN

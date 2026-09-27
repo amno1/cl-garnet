@@ -47,6 +47,16 @@
 (defparameter *current-panel-set* nil)
 
 
+
+;; Set by the DEFPARAMETERs in the (WHEN GEM::*X11-SERVER-AVAILABLE* ...) forms
+;; below, which the compiler does not see as top-level definitions.
+(declaim (special font-height font-char-width form-icon-width
+		  inherited-icon-width label-width max-value-width label-num-chars
+		  label-side-width icon-at-right-offset full-item-width
+		  scroll-panel-width scroll-panel-num-items scroll-panel-height
+		  panel-set-height panel-set-total-height scroll-panel-left-offset
+		  scroll-panel-width-offset))
+
 (defparameter *c32-package* (find-package "common-lisp-user")
   "This package is used for all read operations.  it allows the user
    to type values and object names without a package prefix.")
