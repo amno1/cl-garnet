@@ -557,14 +557,10 @@
 		    t);; exit the event loop
 		   (t nil);; must have been shift key, etc.  Loop for more.
 		   ))))
-	   (when suspend-process
-	     (opal:launch-main-event-loop-process))
-	   )
          #-(or apple clx)
-         (progn
-           (warn "ident is not supported on this backend yet.")
-           (when suspend-process
-             (opal:launch-main-event-loop-process)))
+         (warn "ident is not supported on this backend yet.")
+	   (when suspend-process
+	     (opal:launch-main-event-loop-process)))
          )
     (list obj window loc-x loc-y garnet-code)))
 
