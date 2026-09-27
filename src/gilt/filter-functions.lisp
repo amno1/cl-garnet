@@ -89,7 +89,7 @@
   ;; font name.  Returns NIL if name is not a string, and returns :NOT-FONT
   ;; if name is not a valid font name.
   (when (typep name 'string)
-    (if (gem:font-exists-p (g-value opal::DEVICE-INFO :current-root) name)
+    (if (gem:font-exists-p (g-value gem:DEVICE-INFO :current-root) name)
 	(create-instance NIL opal:font-from-file
 	   (:font-name name))
 	:NOT-FONT)))
