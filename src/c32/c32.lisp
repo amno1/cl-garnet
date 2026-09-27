@@ -702,12 +702,14 @@
 (defvar *error-gadget-object* nil)
 
 ;; Display an error message, let the user click on ok to remove it.
+(defun c32-error-gadget ()
+  "Return C32's error gadget, creating it the first time."
+  (or *error-gadget-object*
+      (setf *error-gadget-object*
+	    (create-instance nil garnet-gadgets:error-gadget))))
+
 (defun c32error (str)
-  (unless *error-gadget-object*
-    ;; first time - create it.
-    (setf *error-gadget-object*
-	  (create-instance nil garnet-gadgets:error-gadget)))
-  (gg:display-error *error-gadget-object* str))
+  (gg:display-error (c32-error-gadget) str))
 
 (defvar *query-gadget-object* nil)
 

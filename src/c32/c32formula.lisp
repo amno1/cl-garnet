@@ -291,7 +291,7 @@
 	 "Error while parsing formula, please re-edit string or press Cancel")
 	final-value formula-value no-error had-value second-value)
     (multiple-value-bind (val errorp)
-	(gg:Careful-Eval `(read-from-string ,new-str) error-gadget-object
+	(gg:Careful-Eval `(read-from-string ,new-str) (c32-error-gadget)
 			 (if check-formula-p
 			     formula-message
 			     "Please enter a correct value"))
@@ -309,7 +309,7 @@
 		 ;; Check and make sure this will work as a formula.
 		 (let ((new-formula (formula val))) ; make formula here.
 		   (multiple-value-bind (value errorp)
-		       (gg:Careful-Eval-Formula-Lambda val error-gadget-object
+		       (gg:Careful-Eval-Formula-Lambda val (c32-error-gadget)
 			 formula-message *current-formula-obj*
 			 *current-formula-slot* new-formula T)
 		     (setf formula-value value)
@@ -325,7 +325,7 @@
 	     (if (fboundp (car val))
 	       ;; Evaluate this as a function application.
 	       (multiple-value-bind (value errorp)
-		   (gg:Careful-Eval val error-gadget-object
+		   (gg:Careful-Eval val (c32-error-gadget)
 				    (if check-formula-p
 				      formula-message
 				      "Please enter a correct value"))
