@@ -126,9 +126,11 @@
    :filling-style-gc nil))
 
 ;;; Macro to access XCB connection from an Opal window
-(declaim (inline the-display get-full-display-name connection-for-window))
+(declaim (inline xcb-display connection-for-window))
 
-(defun the-display (window)
+;; Not named THE-DISPLAY: that is a macro in the core (src/gem/gem.lisp), which
+;; has no fallback for a window without :display-info.
+(defun xcb-display (window)
   "Given an Opal window, return the XCB connection attached to it."
   (if (and window (schema-p window))
       (let ((dinfo (g-value window :display-info)))
@@ -175,7 +177,7 @@
 
 (defun connection-for-window (window)
   "Return the XCB connection associated with WINDOW or the current root."
-  (the-display (or window (g-value gem:device-info :current-root))))
+  (xcb-display (or window (g-value gem:device-info :current-root))))
 
 
 ;;; GC Synchronization & Raster Operations
@@ -561,7 +563,7 @@ staged."
 
 (defun xcb-check-wm-delete-window (root-window type data format)
   (and (eq format 32)
-       (let ((conn (the-display (or root-window (g-value gem:device-info :current-root)))))
+       (let ((conn (xcb-display (or root-window (g-value gem:device-info :current-root)))))
          (and conn
               (let ((wm-protocols (xcb:intern-atom-id conn "WM_PROTOCOLS"))
                     (wm-delete (xcb:intern-atom-id conn "WM_DELETE_WINDOW")))
@@ -658,7 +660,7 @@ staged."
       (xcb:map-window conn drawable))))
 
 (defun xcb-reparent (window new-parent drawable left top)
-  (let* ((conn (the-display window))
+  (let* ((conn (xcb-display window))
          (parent-drawable (if new-parent
                               (g-value new-parent :drawable)
                               *default-xcb-root*)))
@@ -668,7 +670,7 @@ staged."
 
 (defun xcb-raise-or-lower (window raisep)
   (let* ((drawable (g-value window :drawable))
-         (conn (the-display window)))
+         (conn (xcb-display window)))
     (when (and conn drawable)
       (xcb:configure-window conn drawable +config-window-stack-mode+
                             :stack-mode
@@ -686,7 +688,7 @@ staged."
 
 (defun xcb-set-window-property (window property value)
   (let* ((drawable (g-value window :drawable))
-         (conn (the-display window)))
+         (conn (xcb-display window)))
     (when (and conn drawable)
       (case property
         (:left
@@ -784,7 +786,7 @@ staged."
 
 (defun xcb-mouse-grab (window grabp want-enter-leave &optional (ownerp t))
   (let* ((drawable (g-value window :drawable))
-         (conn (the-display window)))
+         (conn (xcb-display window)))
     (when (and conn drawable)
       (if grabp
           (let ((mask (if want-enter-leave
@@ -823,12 +825,12 @@ staged."
   (funcall function))
 
 (defun xcb-flush-output (window)
-  (let ((conn (the-display window)))
+  (let ((conn (xcb-display window)))
     (when conn
       (finish-output (xcb:conn-stream conn)))))
 
 (defun xcb-beep (root-window)
-  (let ((conn (the-display (or root-window (g-value gem:device-info :current-root)))))
+  (let ((conn (xcb-display (or root-window (g-value gem:device-info :current-root)))))
     (when conn
       (xcb:bell conn 0)
       (finish-output (xcb:conn-stream conn)))))
@@ -899,7 +901,7 @@ and blue from 0 to 1 and returns the pixel; :ALLOC-COLOR returns it as is;
 (defun xcb-clear-area (window &optional (x 0) (y 0) width height clear-buffer-p)
   "Clear an area of WINDOW to its background.  If CLEAR-BUFFER-P, clear its
 double buffer instead: the whole buffer when X is NIL."
-  (let ((conn (the-display window)))
+  (let ((conn (xcb-display window)))
     (when conn
       (if clear-buffer-p
           (let ((buffer (g-value window :buffer))
@@ -1177,7 +1179,7 @@ reused by the next call, so the result must not be kept."
           (xcb:poly-arc conn drawable gc-xid arcs))))))
 
 (defun xcb-set-clip-mask (window clip-mask &optional lstyle-ogc fstyle-ogc)
-  (let* ((conn (the-display (or window (g-value gem:device-info :current-root))))
+  (let* ((conn (xcb-display (or window (g-value gem:device-info :current-root))))
          (l-gc (or lstyle-ogc *xcb-line-gc*))
          (f-gc (or fstyle-ogc *xcb-fill-gc*)))
     (when (and conn l-gc)
@@ -1186,7 +1188,7 @@ reused by the next call, so the result must not be kept."
       (xcb-set-gc-attribute conn f-gc :clip-mask clip-mask))))
 
 (defun xcb-bit-blit (window source s-x s-y width height destination d-x d-y)
-  (let* ((conn (the-display window))
+  (let* ((conn (xcb-display window))
          (gc-xid (gem-gc-gcontext (or (g-value window :buffer-gcontext)
                                       *xcb-line-gc*))))
     (when (and conn source destination)
@@ -1700,24 +1702,30 @@ double buffer of, and its buffer GC is freed as well."
     (t  '(#*1111 #*1111 #*1111 #*1111))))
 
 (defun xcb-image-from-bit-vectors (bitvecs)
-  "Create a 16x16 1-bit XCB-IMAGE by tiling 4x4 bit vectors."
-  (let ((arr (make-array 32 :element-type '(unsigned-byte 8)))
-        (rows (coerce bitvecs 'simple-vector)))
-    (dotimes (y 16)
-      (let* ((bv (svref rows (mod y 4)))
-             (n (logior (aref bv 0)
-                        (ash (aref bv 1) 1)
-                        (ash (aref bv 2) 2)
-                        (ash (aref bv 3) 3)))
-             (byte (logior n (ash n 4))))
-        (setf (aref arr (* y 2)) byte)
-        (setf (aref arr (1+ (* y 2))) byte)))
-    (make-xcb-image :width 16
-                    :height 16
+  "Create a 1-bit XCB-IMAGE from BITVECS, one bit vector per row, as wide as
+the longest row -- like XLIB:BITMAP-IMAGE in the CLX backend.  Bits are
+stored LSB-first.  X repeats a stipple over the area it fills, so a pattern
+does not have to be tiled here."
+  (let* ((rows (coerce bitvecs 'simple-vector))
+         (height (length rows))
+         (width (reduce #'max rows :key #'length :initial-value 0))
+         (bytes-per-line (ceiling width 8))
+         (data (make-array (* bytes-per-line height)
+                           :element-type '(unsigned-byte 8)
+                           :initial-element 0)))
+    (dotimes (y height)
+      (let ((row (svref rows y)))
+        (dotimes (x (length row))
+          (when (= 1 (bit row x))
+            (setf (ldb (byte 1 (mod x 8))
+                       (aref data (+ (* y bytes-per-line) (floor x 8))))
+                  1)))))
+    (make-xcb-image :width width
+                    :height height
                     :depth 1
                     :bits-per-pixel 1
-                    :bytes-per-line 2
-                    :data arr)))
+                    :bytes-per-line bytes-per-line
+                    :data data)))
 
 (defun xcb-device-image (root-window index)
   (declare (ignore root-window))
@@ -1769,7 +1777,7 @@ double buffer of, and its buffer GC is freed as well."
 
 (defun xcb-window-to-image (window left top width height)
   "Create an XCB-IMAGE from a region of a window."
-  (let* ((conn (the-display window))
+  (let* ((conn (xcb-display window))
          (drawable (the-drawable window)))
     (when (and conn drawable)
       (let* ((w (max 1 (round (or width (g-value window :width) 1))))
@@ -1995,7 +2003,7 @@ double buffer of, and its buffer GC is freed as well."
           (inter::base-char-to-character temp-char bits)))))
 
 (defun xcb-create-cursor (root-window source mask foreground background from-font-p x y)
-  (let* ((conn (the-display (or root-window (g-value gem:device-info :current-root))))
+  (let* ((conn (xcb-display (or root-window (g-value gem:device-info :current-root))))
          (cid (and conn (xcb:generate-id conn))))
     (when (and conn cid)
       (multiple-value-bind (fore-r fore-g fore-b)
@@ -2073,7 +2081,7 @@ double buffer of, and its buffer GC is freed as well."
 
 (defun xcb-get-cut-buffer (root-window)
   "Retrieve text from root window property XA_CUT_BUFFER0."
-  (let* ((conn (the-display (or root-window (g-value gem:device-info :current-root))))
+  (let* ((conn (xcb-display (or root-window (g-value gem:device-info :current-root))))
          (root (and conn (xcb:root (display-info-screen *display-info*)))))
     (if (and conn root)
         (handler-case
@@ -2090,7 +2098,7 @@ double buffer of, and its buffer GC is freed as well."
 
 (defun xcb-set-cut-buffer (root-window string)
   "Store string into root window property XA_CUT_BUFFER0."
-  (let* ((conn (the-display (or root-window (g-value gem:device-info :current-root))))
+  (let* ((conn (xcb-display (or root-window (g-value gem:device-info :current-root))))
          (root (and conn (xcb:root (display-info-screen *display-info*)))))
     (when (and conn root (stringp string))
       (handler-case
@@ -2114,7 +2122,7 @@ until it returns NIL, then put them back in order."
             (nconc (nreverse events) (xcb:conn-event-queue conn))))))
 
 (defun xcb-discard-mouse-moved-events (root-window)
-  (let* ((conn (the-display root-window))
+  (let* ((conn (xcb-display root-window))
          (current-x nil)
          (current-y nil)
          (current-win nil))
@@ -2132,7 +2140,7 @@ until it returns NIL, then put them back in order."
                 nil))))
 
 (defun xcb-discard-pending-events (root-window &optional (timeout 0))
-  (let ((conn (the-display root-window)))
+  (let ((conn (xcb-display root-window)))
     (when conn
       (setf (xcb:conn-event-queue conn) nil)
       (when (and timeout (> timeout 0))
@@ -2145,14 +2153,14 @@ until it returns NIL, then put them back in order."
 
 (defun xcb-inject-event (window index)
   (let* ((drawable (g-value window :drawable))
-         (conn (the-display window)))
+         (conn (xcb-display window)))
     (when (and conn drawable)
       (let ((timer-atom (xcb:intern-atom-id conn "TIMER_EVENT")))
         (xcb:send-client-message conn drawable 0 drawable timer-atom (list index))))))
 
 (defun xcb-event-handler (root-window ignore-keys)
   "Wait for and dispatch events from XCB connection to Garnet interactors."
-  (let ((conn (the-display root-window)))
+  (let ((conn (xcb-display root-window)))
     (unless conn
       (return-from xcb-event-handler nil))
     (finish-output (xcb:conn-stream conn))
