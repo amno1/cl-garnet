@@ -525,6 +525,7 @@
 	       (:start-event :leftdown)
 	       (:final-function
 		,#'(lambda (inter ob)
+		     (declare (ignore inter))
 		     (let ((level (g-value ob :expansion-level)))
 		       (s-value ob :expansion-level (if (> level 0) 0 1))
 		       (revert-aggretree-node (g-value ob :parent :parent) ob))))))))))

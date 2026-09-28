@@ -227,7 +227,7 @@ protected-eval).
 		 &key (local-abort nil)
 		      (default-value nil dv?)
 		      (abort-val :ABORT)
-		      (satisfy-test #'(lambda (obj) T))
+		      (satisfy-test #'(lambda (obj) (declare (ignore obj)) T))
 		      (eval-input? nil)
 		 &allow-other-keys
 		 &aux flag form val test?)
@@ -445,7 +445,7 @@ protected-eval).
 			   (default-value nil dv?)
 			   (abort-val :ABORT)
 			   (eval-input? nil)
-			   (satisfy-test #'(lambda (obj) T))
+			   (satisfy-test #'(lambda (obj) (declare (ignore obj)) T))
 		      &allow-other-keys)
   "Prompts user for an input.  <Prompt> is printed with ~A as a prompt.
 <stream> defaults to *query-io*.  If <local-abort> is true a local

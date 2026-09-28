@@ -490,6 +490,7 @@
   (let ((a-window (get-an-opal-window))
         suspend-process
 	opal-display display-info obj window loc-x loc-y garnet-code)
+    (declare (ignorable display-info))  ; only read by the CLX code below
     (cond (a-window
 	   (if verbose
 	     (format t "Click or Type on any object or window...~%"))

@@ -311,7 +311,7 @@ which error occured."
   `(handler-bind
        ((error
 	 (lambda (condition)
-	   (garnet-error-handler context condition :allow-debugger nil))))
+	   (garnet-error-handler ,context condition :allow-debugger nil))))
      ,.forms))
 
 
@@ -539,7 +539,7 @@ garnet-protected-eval).
 
 (defun do-prompt (prompt
 		  &key (local-abort nil) (default-value nil dv?) (abort-val :ABORT)
-		       (satisfy-test #'(lambda (obj) T)) (eval-input? nil)
+		       (satisfy-test #'(lambda (obj) (declare (ignore obj)) T)) (eval-input? nil)
 		       (allow-eval? (not eval-input?))
 		  &aux flag form val test?)
   "Prompts user for an input.  <Prompt> is printed with ~A as a prompt.

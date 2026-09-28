@@ -110,9 +110,9 @@
 
 (defconstant sel-box-size 7)
 (defconstant sel-box-sizeD2 3)
-(defconstant *agg-sel-circle-size* 17)
-(defconstant *min-agg-size* (+ (* 2 *agg-sel-circle-size*) 4))
-(defconstant *min-leaf-size* (+ (* 2 sel-box-size) 4))
+(defparameter *agg-sel-circle-size* 17)
+(defparameter *min-agg-size* (+ (* 2 *agg-sel-circle-size*) 4))
+(defparameter *min-leaf-size* (+ (* 2 sel-box-size) 4))
 
 (when gem::*x11-server-available*
   ;; error gadget to display error messages

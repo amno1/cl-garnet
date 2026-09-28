@@ -22,7 +22,7 @@
 
 (in-package :PLOT-2D)
 
-(eval-when (eval load compile)
+(eval-when (:compile-toplevel :load-toplevel :execute)
   (export '(;; Functions
             nth-width nth-height
 

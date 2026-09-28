@@ -30,24 +30,24 @@
 (defun make-menu (top-agg names x y)
   (let (menu-name my-shadow all-items feedback frame prev-item this-item)
 
-    (create-instance 'menu-name opal:aggregate
+    (setf menu-name (create-instance nil opal:aggregate
       (:left x)(:top y)(:width 500) (:height 500)
       (:window (g-value top-agg :window))
-      (:overlapping T)) ;**NIL**
+      (:overlapping T))) ;**NIL**
 
-    (create-instance 'my-shadow opal:rectangle
+    (setf my-shadow (create-instance nil opal:rectangle
       (:left (o-formula (gvl :parent :left)))
       (:top (o-formula (gvl :parent :top)))
       ;; width and height set later
       (:name :my-shadow)
       (:filling-style opal:black-fill)
-      (:line-style NIL))
+      (:line-style NIL)))
 
-    (create-instance 'all-items opal:aggregate
+    (setf all-items (create-instance nil opal:aggregate
       (:overlapping T) ;**NIL**
-      (:name :all-items))
+      (:name :all-items)))
 
-    (create-instance 'frame opal:rectangle
+    (setf frame (create-instance nil opal:rectangle
       (:filling-style opal:white-fill)
       (:name :frame)
       (:line-style opal:line-2)
@@ -55,13 +55,13 @@
       (:left (o-formula (+ 5 (gvl :shadow :left)) 0))
       (:top (o-formula (+ 5 (gvl :shadow :top)) 0))
       (:width (o-formula (gvl :shadow :width) 0))
-      (:height (o-formula (gvl :shadow :height) 0)))
+      (:height (o-formula (gvl :shadow :height) 0))))
 
     (opal:add-components top-agg menu-name)
 
     (opal:add-components menu-name my-shadow frame all-items)
 
-    (create-instance 'feedback opal:rectangle
+    (setf feedback (create-instance nil opal:rectangle
       (:name :feedback)
       (:draw-function :xor)
       (:fast-redraw-p t)
@@ -71,7 +71,7 @@
       (:left (o-formula (1- (gvl :obj-over :left)) 0))
       (:top (o-formula (1- (gvl :obj-over :top)) 0))
       (:width (o-formula (+ 2 (gvl :obj-over :width)) 0))
-      (:height (o-formula (+ 2 (gvl :obj-over :height)) 0)))
+      (:height (o-formula (+ 2 (gvl :obj-over :height)) 0))))
 
     (opal:add-components menu-name feedback)
 
@@ -121,16 +121,19 @@
   (let (menu outline-feedback all-items )
     (setf menu (make-menu agg names x y))
     (setf all-items (get-value menu :all-items))
-    (create-instance 'outline-feedback opal:rectangle
-      (:name :outline-feedback)
-      (:draw-function :xor)
-      (:fast-redraw-p t)
-      (:all-items all-items)
-      (:visible (o-formula (gvl :all-items :selected)))
-      (:left (o-formula (- (gvl :all-items :selected :left) 2) 0))
-      (:top (o-formula (- (gvl :all-items :selected :top) 2) 0))
-      (:width (o-formula (+ 2 (gvl :all-items :selected :width)) 0))
-      (:height (o-formula (+ 4 (gvl :all-items :selected :height)) 0)))
+    ;; Anonymous, and stored in the local variable: a named instance would set
+    ;; the global OUTLINE-FEEDBACK and leave this one NIL.
+    (setf outline-feedback
+	  (create-instance nil opal:rectangle
+	    (:name :outline-feedback)
+	    (:draw-function :xor)
+	    (:fast-redraw-p t)
+	    (:all-items all-items)
+	    (:visible (o-formula (gvl :all-items :selected)))
+	    (:left (o-formula (- (gvl :all-items :selected :left) 2) 0))
+	    (:top (o-formula (- (gvl :all-items :selected :top) 2) 0))
+	    (:width (o-formula (+ 2 (gvl :all-items :selected :width)) 0))
+	    (:height (o-formula (+ 4 (gvl :all-items :selected :height)) 0))))
     (opal:add-components menu outline-feedback)
     (when *test-debug* (format T "done menu1= ~s~%" menu))
     menu))
@@ -189,11 +192,11 @@
 (defun Create-text-obj (feedback)
   (when *test-debug* (format T "Creating new text object~%"))
   (let (obj)
-    (create-instance 'obj opal:text
+    (setf obj (create-instance nil opal:text
       (:left (g-value feedback :left))
       (:top (g-value feedback :top))
       (:font (g-value feedback :font))
-      (:string (g-value feedback :string)))
+      (:string (g-value feedback :string))))
     (opal:add-component aggnewobj obj)
     (incf texty (g-value obj :height))
     (s-value text-feedback-obj :top texty)
@@ -206,15 +209,15 @@
     (if (g-value newobjinter :line-p)
 	(progn
 	  (when *test-debug* (format T "creating line; ~s~%" point-list))
-	  (create-instance 'obj opal:line
+	  (setf obj (create-instance nil opal:line
 	    (:x1 (first point-list))
 	    (:y1 (second point-list))
 	    (:x2 (third point-list))
 	    (:y2 (fourth point-list))
-	    ))
+	    )))
 	(progn
 	  (when *test-debug* (format T "creating rect; ~s~%" point-list))
-	  (create-instance 'obj opal:rectangle
+	  (setf obj (create-instance nil opal:rectangle
 	    (:left (first point-list))
 	    (:top (second point-list))
 	    (:width (third point-list))
@@ -224,7 +227,7 @@
 	       (0 opal:white-fill)
 	       (1 opal:light-gray-fill)
 	       (2 opal:gray-fill)
-	       (3 opal:dark-gray-fill))))
+	       (3 opal:dark-gray-fill)))))
 	  (setq *glo-tone* (if (eq *glo-tone* 3) 0 (1+ *glo-tone*)))))
 
     (opal:add-component aggnewobj obj)

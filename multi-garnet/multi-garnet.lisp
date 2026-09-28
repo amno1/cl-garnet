@@ -40,8 +40,9 @@
       (format t "~&warning: uninstall-hook: ~S fn never saved~%" fn))))
 
 (defmacro call-hook-save-fn (fn &rest args)
+  ;; SAVE-FN is only defined at runtime, by INSTALL-HOOK, so look it up then.
   (let ((save-fn (get-save-fn-symbol-name fn)))
-    `(,save-fn ,@args)))
+    `(funcall (fdefinition ',save-fn) ,@args)))
 
 
 ;; ***** os (object slot) objects *****

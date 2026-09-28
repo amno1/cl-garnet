@@ -40,19 +40,7 @@ Should be invoked with an expression such as:
   (gg:garnet-error-handler context condition :allow-debugger allow-debugger))
 
 
-(defmacro with-protected-errors (context &body forms)
-  "Executes forms in a protected environment where errors are handled
-by prompting-error-handler, which creates queries the user with
-options to abort or continue, possibly with various recovery
-strategies.  If rga:*user-type* is :programmer, then allows debugging.
-
-<context> should be a string describing user meaningful context in
-which error occured."
-  `(handler-bind
-       ((error
-	 (lambda (condition)
-	   (protect-errors ,context condition))))
-     ,.forms))
+;; WITH-PROTECTED-ERRORS is defined in abstract-errors.lisp.
 
 
 

@@ -235,8 +235,8 @@
   ;; controller know (if it's there).
   (when (fboundp 'common-lisp-user::Garnet-Note-Quitted)
     (pushnew
-     #'(lambda (win)
-	 (declare (ignore win))
+     #'(lambda (a-window)
+	 (declare (ignore a-window))
 	 (common-lisp-user::Garnet-Note-Quitted "DEMO-MULTIFONT"))
      (g-value win :destroy-hooks)))
   

@@ -28,10 +28,6 @@
 
 (defun do-go ()
   (format t "Starting Lapidary...~%")
-  ;; boot the interactor dialog boxes
-  (when *load-db*
-    (format t "Setting up interactor dialog boxes")
-    (interactor-db-do-go))
   (format t "Setting up editor main menu~%")
   (editor-menu-do-go)
   ;; editor-menu must exist first because move-inter's :active slot
@@ -81,10 +77,6 @@
 (defun do-stop ()
   (declare (special *selection-info* aggrelist-feedback))
   (format t "Stopping Lapidary...~%")
-  ;; kill the interactor dialog boxes
-  (when *load-db*
-    (format t "Destroying interactor dialog boxes")
-    (interactor-db-do-stop))
   (move-grow-do-stop)
   (format t "Destroying object menu~%")
   (shapes-do-stop)

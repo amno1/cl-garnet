@@ -38,7 +38,7 @@
   (let (agg)
   (create-instance 'move-dialog-window inter:interactor-window
        #+apple (:top 50))
-    (create-instance 'agg opal:aggregate)
+    (setf agg (create-instance nil opal:aggregate))
     (s-value move-dialog-window :aggregate agg)))
 
     ;; create the button object that allows the user to choose an

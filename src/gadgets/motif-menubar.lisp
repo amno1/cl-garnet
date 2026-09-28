@@ -641,16 +641,16 @@
   (s-value motif-size-text :string (string-downcase value)))
 
 #+garnet-test
-(defun motif-fixed-fn (gadget bar-item submenu-item)
-  (declare (ignore gadget bar-item submenu-item))
+(defun motif-fixed-fn (gadget a-bar-item a-submenu-item)
+  (declare (ignore gadget a-bar-item a-submenu-item))
   (format t "setting :family slot to :fixed.~%"))
 #+garnet-test
-(defun motif-serif-fn (gadget bar-item submenu-item)
-  (declare (ignore gadget bar-item submenu-item))
+(defun motif-serif-fn (gadget a-bar-item a-submenu-item)
+  (declare (ignore gadget a-bar-item a-submenu-item))
   (format t "setting :family slot to :serif.~%"))
 #+garnet-test
-(defun motif-sans-serif-fn (gadget bar-item submenu-item)
-  (declare (ignore gadget bar-item submenu-item))
+(defun motif-sans-serif-fn (gadget a-bar-item a-submenu-item)
+  (declare (ignore gadget a-bar-item a-submenu-item))
   (format t "setting :family slot to :sans-serif.~%"))
 
 

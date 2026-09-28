@@ -371,6 +371,7 @@ Font changing:
 ;;     item-string (ignored)
 (defun do-load ()
   (let (cancel)
+    (declare (ignorable cancel))
     ;; (unless *saved*
     ;;   (setf cancel (gg:save-file-if-wanted save-dialog
     ;; 					   *last-filename*

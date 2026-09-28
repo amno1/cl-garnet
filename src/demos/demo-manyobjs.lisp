@@ -113,8 +113,8 @@ Good values of number-of-rectangles are 3..50"
     ;; controller know (if it's there).
     (when (fboundp 'common-lisp-user::Garnet-Note-Quitted)
       (pushnew
-       #'(lambda (win)
-	   (declare (ignore win))
+       #'(lambda (a-window)
+	   (declare (ignore a-window))
 	   (common-lisp-user::Garnet-Note-Quitted "DEMO-MANYOBJS"))
        (g-value win :destroy-hooks)))
 
