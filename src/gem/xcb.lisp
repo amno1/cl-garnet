@@ -877,10 +877,21 @@ and blue from 0 to 1 and returns the pixel; :ALLOC-COLOR returns it as is;
   (declare (ignore root-window)
            (optimize (speed 3) (debug 0) (safety 1)))
   (flet ((channel (x)
-           ;; Clamp to [0, 1] as a single-float first, so the result is
-           ;; known to be 0..255 and the arithmetic can be inlined.
-           (let ((f (max 0.0f0 (min 1.0f0 (float x 1.0f0)))))
-             (round (* 255.0f0 f)))))
+           ;; Convert to a single-float clamped to [0, 1], so the result is
+           ;; known to be 0..255 and the arithmetic can be inlined.  Opal's
+           ;; colors pass single-floats; the XPM reader passes ratios.
+           (let ((f (typecase x
+                      (single-float x)
+                      (ratio
+                       ;; Converting a ratio is always a full call.
+                       (locally (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
+                         (coerce x 'single-float)))
+                      (t
+                       ;; Integers and double-floats.
+                       (locally (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
+                         (float x 1.0f0))))))
+             (declare (type single-float f))
+             (round (* 255.0f0 (max 0.0f0 (min 1.0f0 f)))))))
     (case property
       (:color-lookup (values 0 0 0))
       (:make-color
