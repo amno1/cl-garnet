@@ -876,20 +876,27 @@ and blue from 0 to 1 and returns the pixel; :ALLOC-COLOR returns it as is;
 :QUERY-COLORS returns a pixel's 16-bit red, green and blue."
   (declare (ignore root-window)
            (optimize (speed 3) (debug 0) (safety 1)))
-  (flet ((channel (x) (max 0 (min 255 (round (* 255 x))))))
+  (flet ((channel (x)
+           ;; Clamp to [0, 1] as a single-float first, so the result is
+           ;; known to be 0..255 and the arithmetic can be inlined.
+           (let ((f (max 0.0f0 (min 1.0f0 (float x 1.0f0)))))
+             (round (* 255.0f0 f)))))
     (case property
       (:color-lookup (values 0 0 0))
       (:make-color
        (logior (ash (channel a) 16) (ash (channel b) 8) (channel c)))
       (:alloc-color a)
       (:query-colors
-       (values (* 257 (ldb (byte 8 16) a))
-               (* 257 (ldb (byte 8 8)  a))
-               (* 257 (ldb (byte 8 0)  a))))
+       (let ((pixel a))
+         (declare (type (unsigned-byte 32) pixel))
+         (values (* 257 (ldb (byte 8 16) pixel))
+                 (* 257 (ldb (byte 8 8)  pixel))
+                 (* 257 (ldb (byte 8 0)  pixel)))))
       (t (error "Unknown property ~S in gem::xcb-colormap-property" property)))))
 
 (defun xcb-query-color (root-window pixel)
   (declare (ignore root-window)
+           (type (unsigned-byte 32) pixel)
            (optimize (speed 3) (debug 0) (safety 1)))
   (values (ash (logand pixel #xff0000) -16)
           (ash (logand pixel #x00ff00) -8)
@@ -1698,8 +1705,7 @@ double buffer of, and its buffer GC is freed as well."
     (13 '(#*1010 #*1111 #*1011 #*1111))
     (14 '(#*1110 #*1111 #*1011 #*1111))
     (15 '(#*1110 #*1111 #*1111 #*1111))
-    (16 '(#*1111 #*1111 #*1111 #*1111))
-    (t  '(#*1111 #*1111 #*1111 #*1111))))
+    (t  '(#*1111 #*1111 #*1111 #*1111))))  ; 16 and above: solid
 
 (defun xcb-image-from-bit-vectors (bitvecs)
   "Create a 1-bit XCB-IMAGE from BITVECS, one bit vector per row, as wide as
@@ -2050,7 +2056,7 @@ does not have to be tiled here."
                                     +pixmap-none+))))
                 (xcb:create-cursor conn cid
                                    (or src-pm +pixmap-none+)
-                                   (or msk-pm +pixmap-none+)
+                                   msk-pm  ; already defaults to +PIXMAP-NONE+
                                    fore-r fore-g fore-b
                                    back-r back-g back-b
                                    (or x 0) (or y 0))))
