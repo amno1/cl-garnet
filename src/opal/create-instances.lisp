@@ -319,11 +319,16 @@ avoiding wasted objects.
   (:green 1.0)
   (:blue 1.0)
   (:color-p t)    ;; depreciated, all screens are considered to be 'color'
+  ;; Depend on the current device, as ARROW-CURSOR's :image does: colors
+  ;; such as WHITE and BLACK are used while the core loads, before a
+  ;; backend exists, and the NIL computed then would otherwise be kept.
   (:xcolor
    (o-formula
-    (gem:colormap-property
-     (gv gem:device-info :current-root)
-     :MAKE-COLOR (gvl :red) (gvl :green) (gvl :blue))))
+    (progn
+      (gv gem:device-info :current-device)
+      (gem:colormap-property
+       (gv gem:device-info :current-root)
+       :MAKE-COLOR (gvl :red) (gvl :green) (gvl :blue)))))
   (:colormap-index
    (o-formula
     (gem:colormap-property

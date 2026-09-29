@@ -1263,7 +1263,7 @@ then will be the object itself.  returns nil if fails
 	      (format t "checking ~s = " which-where))
     (setq result
 	  (cond ((eq where t))		; t means anywhere in the window
-		((null where))		; nil as where means failure, useful to have
+		((null where) nil)	; nil as where means failure, useful to have
 					; interactor not run (e.g, start-where is a formula)
 		((listp where)
 		 (let ((x (event-x event))

@@ -289,7 +289,9 @@ Click the button to start the demo."))
     T)))
 
 (defun Message (format &rest args)
-  (if text
+  ;; TEXT only exists once the demos controller has been started; a demo
+  ;; run on its own, such as demo-pixmap, prints the message instead.
+  (if (and (boundp 'text) text)
       (progn (opal:go-to-end-of-text text)
 	     (opal:insert-text
 	      text
