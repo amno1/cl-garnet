@@ -163,7 +163,7 @@ Change log:
      (:running-where T))
   (s-value TRUCK :weight (o-formula (gv SLIDER :weight)))
   (unless dont-enter-main-event-loop
-    #-(or sbcl cmu) (inter:main-event-loop)))
+    #-cmu (inter:main-event-loop)))
 
 (defun Do-stop ()
   (Opal:Destroy win1))

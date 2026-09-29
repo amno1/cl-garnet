@@ -192,7 +192,7 @@
   (format t "Good luck, and enjoy!!!!~%~%")
 
   (unless dont-enter-main-event-loop
-    #-(or sbcl cmu) (inter:main-event-loop)))
+    #-cmu (inter:main-event-loop)))
 
 (defun adjacent? (obj1 obj2)
   (let ((xpos1 (g-value obj1 :x-pos))  (xsize1 (g-value obj1 :x-size))
