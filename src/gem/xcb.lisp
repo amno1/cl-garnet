@@ -391,6 +391,31 @@ staged."
 
 ;;; Device Initialization & Connection
 
+;;; A clxcb connection, unlike a CLX display, has no lock: its requests
+;;; are written into one shared send buffer.  So only the thread running
+;;; the event loop may use Garnet's connection.  Timer threads (see
+;;; inter/animation-process.lisp) only need to wake the event loop with
+;;; a TIMER_EVENT ClientMessage; they send it on a connection of their
+;;; own.  SendEvent with an empty event mask delivers the event to the
+;;; client that created the window, so the event loop receives it on
+;;; the main connection as before.
+
+(defvar *xcb-display-names* (make-hash-table :test 'eq :weakness :key)
+  "The display name each Garnet connection was opened with.")
+
+(defvar *xcb-timer-connections* (make-hash-table :test 'eq :weakness :key)
+  "For each Garnet connection, the connection timer threads send on.")
+
+(defvar *xcb-timer-lock* (bordeaux-threads:make-lock "xcb-timer-connection")
+  "Serializes timer threads' use of their shared connections.")
+
+(defun xcb-timer-connection (conn)
+  "The connection timer threads use for CONN's display, opened on first
+   use.  Call with *XCB-TIMER-LOCK* held."
+  (or (gethash conn *xcb-timer-connections*)
+      (setf (gethash conn *xcb-timer-connections*)
+            (xcb-connect-and-handshake (gethash conn *xcb-display-names*)))))
+
 (defun xcb-connect-and-handshake (&optional display-name)
   "Connect to X server and complete initial handshake using clxcb."
   (let ((display-str (or display-name (uiop:getenv "DISPLAY") ":0")))
@@ -405,6 +430,7 @@ staged."
                 (auth-data (or auth-data-raw #())))
             (let ((conn (xcb:open-connection :path display-socket)))
               (xcb:setup-handshake conn auth-name auth-data)
+              (setf (gethash conn *xcb-display-names*) display-str)
               conn)))))))
 
 (defun xcb-set-device-variables (full-display-name)
@@ -826,7 +852,12 @@ staged."
 
 (defun xcb-flush-output (window)
   (let ((conn (xcb-display window)))
-    (when conn
+    ;; Not from a timer thread: the event loop's thread owns CONN (see
+    ;; XCB-TIMER-CONNECTION), and XCB-INJECT-EVENT, the only thing a
+    ;; timer thread sends, already flushed its own connection.
+    (when (and conn
+               (not (equal (bordeaux-threads:thread-name (bordeaux-threads:current-thread))
+                           "Garnet Timer")))
       (finish-output (xcb:conn-stream conn)))))
 
 (defun xcb-beep (root-window)
@@ -2169,11 +2200,18 @@ until it returns NIL, then put them back in order."
   t)
 
 (defun xcb-inject-event (window index)
+  "Send WINDOW a TIMER_EVENT ClientMessage carrying INDEX.  Called from
+   timer threads, so it uses their connection, not WINDOW's (see
+   XCB-TIMER-CONNECTION), and flushes it."
   (let* ((drawable (g-value window :drawable))
          (conn (xcb-display window)))
     (when (and conn drawable)
-      (let ((timer-atom (xcb:intern-atom-id conn "TIMER_EVENT")))
-        (xcb:send-client-message conn drawable 0 drawable timer-atom (list index))))))
+      (bordeaux-threads:with-lock-held (*xcb-timer-lock*)
+        (let* ((timer-conn (xcb-timer-connection conn))
+               (timer-atom (xcb:intern-atom-id timer-conn "TIMER_EVENT")))
+          (xcb:send-client-message timer-conn drawable 0 drawable timer-atom
+                                   (list index))
+          (finish-output (xcb:conn-stream timer-conn)))))))
 
 (defun xcb-event-handler (root-window ignore-keys)
   "Wait for and dispatch events from XCB connection to Garnet interactors."
