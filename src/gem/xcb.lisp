@@ -1,8 +1,8 @@
 ;;; -*- Mode: LISP; Syntax: Common-Lisp; Package: GEM; Base: 10 -*-
 ;;;
-;;; CL-XCB Device Backend for GEM (Garnet Extension Mechanism)
+;;; CLXCB Device Backend for GEM (Garnet Extension Mechanism)
 ;;;
-;;; Implements GEM device abstraction using cl-xcb (pure Common Lisp XCB).
+;;; Implements GEM device abstraction using clxcb (pure Common Lisp XCB).
 ;;;
 
 (in-package :gem)
@@ -139,7 +139,7 @@
             *default-xcb-connection*))
       *default-xcb-connection*))
 
-;;; Device schema for cl-xcb
+;;; Device schema for clxcb
 (create-schema 'xcb-device (:root-window *root-window*) (:device-type :xcb))
 
 ;;; Display specification parsing
@@ -392,7 +392,7 @@ staged."
 ;;; Device Initialization & Connection
 
 (defun xcb-connect-and-handshake (&optional display-name)
-  "Connect to X server and complete initial handshake using cl-xcb."
+  "Connect to X server and complete initial handshake using clxcb."
   (let ((display-str (or display-name (uiop:getenv "DISPLAY") ":0")))
     (multiple-value-bind (host display-number screen protocol)
         (xcb:parse-display display-str)
@@ -408,7 +408,7 @@ staged."
               conn)))))))
 
 (defun xcb-set-device-variables (full-display-name)
-  "Open connection to X server using cl-xcb and initialize screen variables."
+  "Open connection to X server using clxcb and initialize screen variables."
   (setf *default-xcb-screen-number* (get-screen-number full-display-name))
   (unless *x11-server-available*
     ;; Fallback values when X11 server is not available (e.g. non-GUI compilation)
@@ -490,7 +490,7 @@ staged."
   (xcb-set-screen-color-attribute-variables root-window))
 
 (defun xcb-initialize-device-post ()
-  "Post-initialization for cl-xcb: ensure atoms are interned."
+  "Post-initialization for clxcb: ensure atoms are interned."
   (when *default-xcb-connection*
     (xcb:intern-atom-id *default-xcb-connection* "WM_PROTOCOLS")
     (xcb:intern-atom-id *default-xcb-connection* "WM_DELETE_WINDOW")
