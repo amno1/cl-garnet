@@ -487,8 +487,8 @@
 	    :components ((:file "x-inter")))))
 
 (asdf:defsystem :garnet/xcb
-  :description "Garnet with cl-xcb (pure Common Lisp X11) backend (work-in-progress)"
-  :depends-on (:garnet/core :cl-xcb)
+  :description "Garnet with clxcb (pure Common Lisp X11) backend (work-in-progress)"
+  :depends-on (:garnet/core :clxcb)
   :license "MIT-ish (also public domain, see LICENSE)"
   :author "Arthur Miller")
 
