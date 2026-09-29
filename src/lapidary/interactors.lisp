@@ -236,8 +236,7 @@
 		      ;; formula to it. Otherwise, just store the interim 
 		      ;; feedback object in the feedback-obj slot
 		        (store-obj-in-inter-slot inter :feedback-obj 
-						 (car value)))))
-	  (t (s-value inter :feedback-obj nil))))
+						 (car value)))))))
 	  (:final-feedback-obj
 	   (cond ((null value)
 		  (s-value inter :final-feedback-obj nil))
@@ -306,8 +305,7 @@
 		      ;; formula to it. Otherwise, just store the interim 
 		      ;; feedback object in the feedback-obj slot
 		      (store-obj-in-inter-slot inter :final-feedback-obj 
-					       (car value)))))
-		 (t (s-value inter :final-feedback-obj nil)))
+					       (car value))))))
 	   (s-value inter :final-feed-inuse nil)
 	   (s-value inter :final-feed-avail nil))
 	  (:obj-to-change

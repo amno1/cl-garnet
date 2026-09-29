@@ -301,11 +301,6 @@ determine when to use each of the feedback objects."))
 	  (:start-where
 	   (initialize-start-where inter agg :in-box "Object to Press Over"
 				   :element-of "One of This Aggregate"))
-	  (:prototype-objs
-	   (s-value (move-grow-obj-prototypes) :value nil)
-	   (s-value (move-grow-obj-prototypes) :field-string nil)
-	   (s-value (move-grow-feedback-prototypes) :value nil)
-	   (s-value (move-grow-feedback-prototypes) :field-string nil))
 	  (:line-p
 	   (let ((line-p (get-value inter :line-p))
 		 (line-p-agg (g-value move-grow-inter-menu :line-p)))
@@ -487,7 +482,7 @@ determine when to use each of the feedback objects."))
     (angle-inter-do-go))
   (let ((agg (g-value angle-inter-win :aggregate)))
     (dolist (slot '(:known-as :start-where :final-function
-		    :feedback-obj :attach-point :obj-to-change :start-event))
+		    :feedback-obj :center-of-rotation :obj-to-change :start-event))
 	(case slot
 	  ((:known-as :final-function)
 	   (initialize-inter-db-string inter agg slot))
@@ -502,33 +497,31 @@ determine when to use each of the feedback objects."))
 				(name-for-schema (g-value inter :feedback-obj))))
 	       (set-db-value agg :feedback-obj "None")))
 	  (:center-of-rotation
-	   (let* ((rotation-agg (g-value agg :lapidary-rotation :contents))
+	   ;; Show the interactor's center of rotation, as
+	   ;; SET-INTERACTOR-SLOTS stored it: :ATTACH-POINT is :PAIR (the
+	   ;; point is in :CENTER-OF-ROTATION), :FORMULA, or the
+	   ;; :ATTACH-POINT of one of the box or line buttons.
+	   (let* ((center (ANGLE-CENTER-OF-ROTATION))
+		  (rotation-agg (g-value center :contents))
 		  (feedback-obj (g-value rotation-agg :feedback))
-		  (attach-point (get-value inter :attach-point)))
-	     (cond ((eq attach-point :formula)
-		    (s-value feedback-obj :obj-over 
-			     (g-value rotation-agg :formula)))
-		   ((eq attach-point :pair)
-		    (s-value (ANGLE-CENTER-OF-ROTATION) :x 
-			     (prin1-to-string (car attach-point)))
-		    (s-value (ANGLE-CENTER-OF-ROTATION) :y 
-			     (prin1-to-string (second attach-point))))
-		   ((dolist (obj (g-value rotation-agg :box-buttons
-				  :components))
-			    (when (eq (g-value obj :attach-point) attach-point)
-				  (s-value feedback-obj :obj-over obj)
-				  (s-value (Angle-Center-of-Rotation) :value
-					   obj)
-				  (return obj))))
-		   (t
-		    (dolist (obj (g-value rotation-agg :line-buttons
-				   :components))
-			     (when (eq (g-value obj :attach-point) 
-				       attach-point)
-				   (s-value feedback-obj :obj-over obj)
-				   (s-value (Angle-Center-of-Rotation) :value
-					   obj)
-				   (return obj)))))))
+		  (attach-point (get-value inter :attach-point))
+		  (button
+		    (case attach-point
+		      (:pair nil)
+		      (:formula (g-value rotation-agg :formula))
+		      (t (find attach-point
+			       (append (g-value rotation-agg :box-buttons :components)
+				       (g-value rotation-agg :line-buttons :components))
+			       :key #'(lambda (obj) (g-value obj :attach-point)))))))
+	     (s-value feedback-obj :obj-over button)
+	     (s-value center :value button)
+	     (if (eq attach-point :pair)
+		 (let ((point (get-value inter :center-of-rotation)))
+		   (s-value center :x (prin1-to-string (first point)))
+		   (s-value center :y (prin1-to-string (second point))))
+		 (progn
+		   (s-value center :x "")
+		   (s-value center :y "")))))
 	  (:obj-to-change
 	   (if (get-value inter :obj-to-change)
 	       (set-db-value agg :obj-to-change "<Formula>")

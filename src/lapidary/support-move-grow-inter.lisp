@@ -25,10 +25,6 @@
 
 (defmacro MOVE-GROW-START-WHERE ()
   `(g-value MOVE-GROW-INTER-MENU :start-where))
-(defmacro MOVE-GROW-OBJ-PROTOTYPES ()
-  `(g-value MOVE-GROW-INTER-MENU :prototype-objs :obj-prototypes))
-(defmacro MOVE-GROW-FEEDBACK-PROTOTYPES ()
-  `(g-value MOVE-GROW-INTER-MENU :prototype-objs :feedback-prototypes))
 (defmacro MOVE-GROW-FEEDBACK-OBJ ()
   `(g-value MOVE-GROW-INTER-MENU :feedback-obj))
 (defmacro MOVE-GROW-GROW-PARM ()
@@ -131,39 +127,6 @@
 	  (s-value start-where :field-string nil)
 	  (s-value start-where :value nil)
 	  (s-value start-where :type nil)))))
-
-(defun move-grow-obj-prototypes-fn (inter button-label)
-  (declare (special move-grow-inter-menu))
-  (declare (ignore inter button-label))
-  (let ((selection (g-value *SELECTION-INFO* :selected)))
-    (if selection
-	(progn
-	  (s-value (MOVE-GROW-OBJ-PROTOTYPES) :value t)
-	  (s-value (MOVE-GROW-OBJ-PROTOTYPES) :field-string
-		   (let* ((kr::*print-as-structure* nil))
-			  (prin1-to-string selection)))
-	  (dialog-enqueue :obj-prototypes selection *MOVE-GROW-INTER-QUEUE*))
-	(progn
-	  (dialog-enqueue :obj-prototypes nil *MOVE-GROW-INTER-QUEUE*)
-	  (s-value (MOVE-GROW-OBJ-PROTOTYPES) :field-string nil)
-	  (s-value (MOVE-GROW-OBJ-PROTOTYPES) :value nil)))))
-
-(defun move-grow-feedback-prototypes-fn (inter button-label)
-  (declare (special move-grow-inter-menu))
-  (declare (ignore inter button-label))
-  (let ((selection (g-value *SELECTION-INFO* :selected)))
-    (if selection
-	(progn
-	  (s-value (MOVE-GROW-FEEDBACK-PROTOTYPES) :value t)
-	  (s-value (MOVE-GROW-FEEDBACK-PROTOTYPES) :field-string
-		   (let* ((kr::*print-as-structure* nil))
-			  (prin1-to-string selection)))
-	  (dialog-enqueue :feedback-prototypes selection 
-			  *MOVE-GROW-INTER-QUEUE*))
-	(progn
-	  (dialog-enqueue :feedback-prototypes nil *MOVE-GROW-INTER-QUEUE*)
-	  (s-value (MOVE-GROW-FEEDBACK-PROTOTYPES) :field-string nil)
-	  (s-value (MOVE-GROW-FEEDBACK-PROTOTYPES) :value nil)))))
 
 (defun MOVE-GROW-LINE-P-FN (panel value)
   (if (string= value "<Formula>")

@@ -1367,7 +1367,11 @@
 ;; linear equations, since A is determined outside of the cycle, reducing
 ;; the second method to 5*B->C.
 
-;;; Define stubs to silence compiler.
+;;; Stubs, so the example compiles.  NOTINLINE keeps SBCL from using
+;;; what it sees here (that they return NIL) and deleting the parts of
+;;; LINEAR-EQN-CYCLE-SOLVER that only a real solver would reach.
+(declaim (notinline extract-cn-linear-eqn solve-linear-eqns
+                    linear-eqn-soln-val linear-eqns-have-no-soln))
 (defun extract-cn-linear-eqn (cn cycle-vars)
   (declare (ignore cn cycle-vars))
   nil)

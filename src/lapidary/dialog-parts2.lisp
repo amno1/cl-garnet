@@ -84,7 +84,7 @@
 
 (create-instance 'NAME-BOX garnet-gadgets:labeled-box
    (:left (o-formula (+ 10 (gvl-fixnum :parent :left))))
-   (:top (o-formula (+ 10 (opal:gv-bottom (gvl-fixnum :parent :title)))))
+   (:top (o-formula (+ 10 (opal:gv-bottom (gvl :parent :title)))))
    (:label-string "Interactor Name:")
    (:value "")
    (:min-frame-width 150))
@@ -106,7 +106,7 @@
    (:parts
     `((:frame ,opal:rectangle
 		(:left ,(o-formula (gvl-fixnum :parent :left)))
-		(:top ,(o-formula (opal:gv-center-y (gvl-fixnum :parent :text))))
+		(:top ,(o-formula (opal:gv-center-y (gvl :parent :text))))
 		(:width ,(o-formula (gvl-fixnum :parent :width)))
 		(:height ,(o-formula (+ 20 (gvl-fixnum :parent :parent :contents
 						:height)))))
@@ -195,7 +195,7 @@
       (:button-bound-box ,BUTTON-BOUND-BOX)
       (:text-box ,TEXT-BOX
 	  (:visible ,(o-formula (gvl :parent :text-visible)))
-          (:left ,(o-formula (+ 10 (opal:gv-right (gvl-fixnum :parent :shadow)))))
+          (:left ,(o-formula (+ 10 (opal:gv-right (gvl :parent :shadow)))))
 	  (:top ,(o-formula (- (gvl-fixnum :parent :center-y)
 			       (floor (gvl-fixnum :height) 2))))
 	  (:string ,(o-formula (gvl :parent :field-string)))
@@ -401,7 +401,7 @@
 		(:final-feedback-p t))
 	    (:other-box ,text-box
 		(:left ,(o-formula (+ 10 (opal:gv-right
-					  (gvl-fixnum :parent :other-button)))))
+					  (gvl :parent :other-button)))))
 		(:top ,(o-formula (opal:gv-center-y-is-center-of
 				   (gvl :parent :other-button))))
 		(:string ,(o-formula (if (gvl :parent :other-button :selected)
@@ -412,7 +412,7 @@
 		(:constant (t))
 		(:value ,(o-formula (gvl :parent :select-box-panel :type)))
 	        (:left ,(o-formula (+ 10 (opal:gv-right
-					  (gvl-fixnum :parent :other-box)))))
+					  (gvl :parent :other-box)))))
 		(:top ,(o-formula (gv-center-my-top
 				   (gvl :parent :other-button))))
 		(:selection-function prompt-for-type-restrict)
@@ -484,9 +484,9 @@
 	      (:label ,opal:text
 		     (:constant (t))
 		     (:left ,(o-formula (+ (opal:gv-right 
-					    (gvl-fixnum :parent :shadow)) 10)))
+					    (gvl :parent :shadow)) 10)))
 		     (:top ,(o-formula (opal:gv-center-y-is-center-of 
-					(gvl-fixnum :parent :shadow))))
+					(gvl :parent :shadow))))
 		     (:string ,(o-formula (gvl :parent :string)))))))
 
 
