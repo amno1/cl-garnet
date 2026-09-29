@@ -1374,8 +1374,8 @@ that refer to it."
 (defun xcb-font-max-min-width (root-window font min-too)
   (let* ((tt-font (xcb-resolve-font root-window font))
          (target (or *default-xcb-screen* 96))
-         (max-w (xcb-truetype:text-width target tt-font "M"))
-         (min-w (xcb-truetype:text-width target tt-font "i")))
+         (max-w (xcb-truetype:text-line-width target tt-font "M"))
+         (min-w (xcb-truetype:text-line-width target tt-font "i")))
     (if min-too
         (values max-w min-w)
         max-w)))
@@ -1390,22 +1390,26 @@ that refer to it."
          (target (or *default-xcb-screen* 96)))
     (abs (xcb-truetype:font-descent target tt-font))))
 
+;;; Widths are advance widths (TEXT-LINE-WIDTH), as X font metrics give
+;;; them, not ink extents (TEXT-WIDTH): Opal lays text out, and places
+;;; the cursor, by adding up character widths, and expects them to add up
+;;; to the string's width.  An ink box gives a space no width at all.
 (defun xcb-character-width (root-window font character)
   (let* ((tt-font (xcb-resolve-font root-window font))
          (target (or *default-xcb-screen* 96))
          (str (if character (string (code-char character)) "X")))
-    (xcb-truetype:text-width target tt-font str)))
+    (xcb-truetype:text-line-width target tt-font str)))
 
 (defun xcb-text-width (root-window opal-font string)
   (let* ((tt-font (xcb-resolve-font root-window opal-font))
          (target (or *default-xcb-screen* 96)))
-    (xcb-truetype:text-width target tt-font (or string ""))))
+    (xcb-truetype:text-line-width target tt-font (or string ""))))
 
 (defun xcb-text-extents (root-window opal-font string)
   (let* ((tt-font (xcb-resolve-font root-window opal-font))
          (target (or *default-xcb-screen* 96))
          (str (or string ""))
-         (width (xcb-truetype:text-width target tt-font str))
+         (width (xcb-truetype:text-line-width target tt-font str))
          (ascent (xcb-truetype:font-ascent target tt-font))
          (descent (abs (xcb-truetype:font-descent target tt-font))))
     (values width ascent descent 0 width width)))
@@ -1479,7 +1483,7 @@ already destroyed together with its pictures, without sending anything."
              (fg (xcb-color-for-style line-style invert-p))
              (ascent (xcb-truetype:font-ascent screen tt-font)))
         (when fill-background
-          (let* ((w (xcb-truetype:text-width screen tt-font str))
+          (let* ((w (xcb-truetype:text-line-width screen tt-font str))
                  (h (+ ascent (abs (xcb-truetype:font-descent screen tt-font))))
                  (bg-top (- y ascent))
                  (bg-gc (display-info-filling-style-gc display-info))
