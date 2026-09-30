@@ -909,7 +909,11 @@ it has an external interface which allows it to be used by any application.
   (Make-Line-Menu)
   (Make-Fill-Menu)
   (Make-New-Object-Inter)
-  (Make-Selection-Inter))
+  (Make-Selection-Inter)
+  ;; The components and menus were added after the first update, and
+  ;; the window's first exposure does not redraw it, so draw them now
+  ;; rather than on the first input event.
+  (opal:update w))
 
 
 (defun do-go()
