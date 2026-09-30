@@ -396,20 +396,10 @@ staged."
 ;;; TIMER_EVENTs on Garnet's connection, like everything else.
 
 (defun xcb-connect-and-handshake (&optional display-name)
-  "Connect to X server and complete initial handshake using clxcb."
-  (let ((display-str (or display-name (uiop:getenv "DISPLAY") ":0")))
-    (multiple-value-bind (host display-number screen protocol)
-        (xcb:parse-display display-str)
-      (declare (ignore screen))
-      (let ((display-socket (xcb:display-socket display-number)))
-        (multiple-value-bind (family address number auth-name-raw auth-data-raw)
-            (xcb:read-xauth host display-number :protocol protocol)
-          (declare (ignore family address number))
-          (let ((auth-name (or auth-name-raw ""))
-                (auth-data (or auth-data-raw #())))
-            (let ((conn (xcb:open-connection :path display-socket)))
-              (xcb:setup-handshake conn auth-name auth-data)
-              conn)))))))
+  "Connect to the X server and complete the initial handshake: a local
+   display, or a TCP one such as ssh -X sets (localhost:10.0).  See
+   XCB:CONNECT."
+  (xcb:connect :display (or display-name (uiop:getenv "DISPLAY") ":0")))
 
 (defun xcb-set-device-variables (full-display-name)
   "Open connection to X server using clxcb and initialize screen variables."
