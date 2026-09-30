@@ -391,30 +391,9 @@ staged."
 
 ;;; Device Initialization & Connection
 
-;;; A clxcb connection, unlike a CLX display, has no lock: its requests
-;;; are written into one shared send buffer.  So only the thread running
-;;; the event loop may use Garnet's connection.  Timer threads (see
-;;; inter/animation-process.lisp) only need to wake the event loop with
-;;; a TIMER_EVENT ClientMessage; they send it on a connection of their
-;;; own.  SendEvent with an empty event mask delivers the event to the
-;;; client that created the window, so the event loop receives it on
-;;; the main connection as before.
-
-(defvar *xcb-display-names* (make-hash-table :test 'eq :weakness :key)
-  "The display name each Garnet connection was opened with.")
-
-(defvar *xcb-timer-connections* (make-hash-table :test 'eq :weakness :key)
-  "For each Garnet connection, the connection timer threads send on.")
-
-(defvar *xcb-timer-lock* (bordeaux-threads:make-lock "xcb-timer-connection")
-  "Serializes timer threads' use of their shared connections.")
-
-(defun xcb-timer-connection (conn)
-  "The connection timer threads use for CONN's display, opened on first
-   use.  Call with *XCB-TIMER-LOCK* held."
-  (or (gethash conn *xcb-timer-connections*)
-      (setf (gethash conn *xcb-timer-connections*)
-            (xcb-connect-and-handshake (gethash conn *xcb-display-names*)))))
+;;; A clxcb connection may be used from several threads (clxcb's
+;;; doc/threads.md), so the animation timer threads send their
+;;; TIMER_EVENTs on Garnet's connection, like everything else.
 
 (defun xcb-connect-and-handshake (&optional display-name)
   "Connect to X server and complete initial handshake using clxcb."
@@ -430,7 +409,6 @@ staged."
                 (auth-data (or auth-data-raw #())))
             (let ((conn (xcb:open-connection :path display-socket)))
               (xcb:setup-handshake conn auth-name auth-data)
-              (setf (gethash conn *xcb-display-names*) display-str)
               conn)))))))
 
 (defun xcb-set-device-variables (full-display-name)
@@ -852,19 +830,14 @@ staged."
 
 (defun xcb-flush-output (window)
   (let ((conn (xcb-display window)))
-    ;; Not from a timer thread: the event loop's thread owns CONN (see
-    ;; XCB-TIMER-CONNECTION), and XCB-INJECT-EVENT, the only thing a
-    ;; timer thread sends, already flushed its own connection.
-    (when (and conn
-               (not (equal (bordeaux-threads:thread-name (bordeaux-threads:current-thread))
-                           "Garnet Timer")))
-      (finish-output (xcb:conn-stream conn)))))
+    (when conn
+      (xcb:flush conn))))
 
 (defun xcb-beep (root-window)
   (let ((conn (xcb-display (or root-window (g-value gem:device-info :current-root)))))
     (when conn
       (xcb:bell conn 0)
-      (finish-output (xcb:conn-stream conn)))))
+      (xcb:flush conn))))
 
 (defun xcb-all-garnet-windows ()
   (let ((result nil))
@@ -2160,18 +2133,9 @@ does not have to be tiled here."
   nil)
 
 (defun xcb-drain-socket (conn)
-  "Read every packet already available on CONN without blocking: queue the
-events, retain the replies and signal the errors.  XCB:POLL-FOR-EVENT pops a
-queued event and stops reading as soon as one event is queued, so pop events
-until it returns NIL, then put them back in order."
-  (let ((events '()))
-    (unwind-protect
-         (loop for ev = (xcb:poll-for-event conn)
-               while ev
-               do (push ev events))
-      ;; Also on a protocol error, so events read before it are not lost.
-      (setf (xcb:conn-event-queue conn)
-            (nconc (nreverse events) (xcb:conn-event-queue conn))))))
+  "Read every packet already available on CONN without blocking, queuing
+its events for XCB:POLL-FOR-EVENT."
+  (xcb:queue-available-events conn))
 
 (defun xcb-discard-mouse-moved-events (root-window)
   (let* ((conn (xcb-display root-window))
@@ -2180,12 +2144,12 @@ until it returns NIL, then put them back in order."
          (current-win nil))
     (when conn
       (xcb-drain-socket conn)
-      (loop while (and (xcb:conn-event-queue conn)
-                       (typep (first (xcb:conn-event-queue conn)) 'xcb:motion-notify))
-            do (let ((ev (pop (xcb:conn-event-queue conn))))
-                 (setf current-x (slot-value ev 'xcb:event-x)
-                       current-y (slot-value ev 'xcb:event-y)
-                       current-win (slot-value ev 'xcb:event)))))
+      (let ((ev (car (last (xcb:pop-queued-events-while
+                            conn (lambda (ev) (typep ev 'xcb:motion-notify)))))))
+        (when ev
+          (setf current-x (slot-value ev 'xcb:event-x)
+                current-y (slot-value ev 'xcb:event-y)
+                current-win (slot-value ev 'xcb:event)))))
     (values current-x current-y
             (if current-win
                 (xcb-window-from-drawable root-window current-win)
@@ -2194,35 +2158,30 @@ until it returns NIL, then put them back in order."
 (defun xcb-discard-pending-events (root-window &optional (timeout 0))
   (let ((conn (xcb-display root-window)))
     (when conn
-      (setf (xcb:conn-event-queue conn) nil)
+      (xcb:clear-event-queue conn)
       (when (and timeout (> timeout 0))
         (when (xcb:wait-for-x-event-or-timeout conn timeout)
           (xcb-drain-socket conn)
-          (setf (xcb:conn-event-queue conn) nil)))
+          (xcb:clear-event-queue conn)))
       (xcb-drain-socket conn)
-      (setf (xcb:conn-event-queue conn) nil)))
+      (xcb:clear-event-queue conn)))
   t)
 
 (defun xcb-inject-event (window index)
   "Send WINDOW a TIMER_EVENT ClientMessage carrying INDEX.  Called from
-   timer threads, so it uses their connection, not WINDOW's (see
-   XCB-TIMER-CONNECTION), and flushes it."
+   timer threads: clxcb connections may be used from several threads."
   (let* ((drawable (g-value window :drawable))
          (conn (xcb-display window)))
     (when (and conn drawable)
-      (bordeaux-threads:with-lock-held (*xcb-timer-lock*)
-        (let* ((timer-conn (xcb-timer-connection conn))
-               (timer-atom (xcb:intern-atom-id timer-conn "TIMER_EVENT")))
-          (xcb:send-client-message timer-conn drawable 0 drawable timer-atom
-                                   (list index))
-          (finish-output (xcb:conn-stream timer-conn)))))))
+      (let ((timer-atom (xcb:intern-atom-id conn "TIMER_EVENT")))
+        (xcb:send-client-message conn drawable 0 drawable timer-atom (list index))))))
 
 (defun xcb-event-handler (root-window ignore-keys)
   "Wait for and dispatch events from XCB connection to Garnet interactors."
   (let ((conn (xcb-display root-window)))
     (unless conn
       (return-from xcb-event-handler nil))
-    (finish-output (xcb:conn-stream conn))
+    (xcb:flush conn)
     (let ((ev (if ignore-keys
                   (xcb:poll-for-event conn)
                   (loop
@@ -2351,7 +2310,7 @@ until it returns NIL, then put them back in order."
          (let ((event-win (slot-value ev 'xcb:window)))
            (remhash event-win *drawable-to-window-table*)
            (xcb-forget-destroyed-drawable event-win)
-           (finish-output (xcb:conn-stream conn))))
+           (xcb:flush conn)))
         (xcb:reparent-notify
          (let ((event-win (slot-value ev 'xcb:window)))
            (when (xcb-connected-window-p event-win)
