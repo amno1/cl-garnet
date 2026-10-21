@@ -119,7 +119,7 @@ function's operation on SRC and DST, so a loop in BODY has no dispatch."
                                              (logand #xFFFFFFFF ,',form))))
                                ,@body)))))
 
-(defun px-row-op (dpix di spix si n fn mask)
+(defun px-row-op-scalar (dpix di spix si n fn mask)
   "DPIX[DI..DI+N) := FN(SPIX[SI..SI+N), DPIX[DI..DI+N)), masked by MASK.
 For GXcopy SPIX may be DPIX with the ranges overlapping."
   (declare (type px-pixels dpix spix) (type fixnum di si n fn)
@@ -133,7 +133,7 @@ For GXcopy SPIX may be DPIX with the ranges overlapping."
               do (setf (aref dpix d)
                        (logand mask (op (aref spix (+ si i)) (aref dpix d))))))))
 
-(defun px-row-fill (dpix di n pixel fn mask)
+(defun px-row-fill-scalar (dpix di n pixel fn mask)
   "DPIX[DI..DI+N) := FN(PIXEL, DPIX[...]), masked by MASK."
   (declare (type px-pixels dpix) (type fixnum di n fn)
            (type (unsigned-byte 32) pixel mask)
@@ -144,7 +144,7 @@ For GXcopy SPIX may be DPIX with the ranges overlapping."
         (loop for d of-type fixnum from di below (+ di n)
               do (setf (aref dpix d) (logand mask (op pixel (aref dpix d))))))))
 
-(defun px-row-blend (dpix di alpha ai n colour)
+(defun px-row-blend-scalar (dpix di alpha ai n colour)
   "Blend COLOUR into DPIX[DI..DI+N) by the coverage ALPHA[AI..AI+N)."
   (declare (type px-pixels dpix) (type (simple-array (unsigned-byte 8) (*)) alpha)
            (type fixnum di ai n) (type (unsigned-byte 32) colour)
@@ -168,6 +168,20 @@ For GXcopy SPIX may be DPIX with the ranges overlapping."
                                (floor (+ (* a f) (* na (ldb (byte 8 shift) d))) 255))))
                    (setf (aref dpix (+ di i))
                          (logior (ash (mix fr 16) 16) (ash (mix fg 8) 8) (mix fb 0)))))))))))
+
+;;; The kernels in use: the scalar ones above, or faster ones that
+;;; wl-raster-simd.lisp installs when it can.
+(defvar *px-row-op* #'px-row-op-scalar)
+(defvar *px-row-fill* #'px-row-fill-scalar)
+(defvar *px-row-blend* #'px-row-blend-scalar)
+
+(declaim (inline px-row-op px-row-fill px-row-blend))
+(defun px-row-op (dpix di spix si n fn mask)
+  (funcall (the function *px-row-op*) dpix di spix si n fn mask))
+(defun px-row-fill (dpix di n pixel fn mask)
+  (funcall (the function *px-row-fill*) dpix di n pixel fn mask))
+(defun px-row-blend (dpix di alpha ai n colour)
+  (funcall (the function *px-row-blend*) dpix di alpha ai n colour))
 
 ;;; Spans
 

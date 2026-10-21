@@ -507,6 +507,7 @@
 	    :serial t
 	    :components ((:file "wl-ffi")
 			 (:file "wl-raster")
+			 (:file "wl-raster-simd")
 			 (:file "wl")))))
 
 ;;; Default entrypoint for backward compatibility
