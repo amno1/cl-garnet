@@ -152,11 +152,14 @@
   (let* ((colon-pos (position #\: display :from-end t))
          (period-pos (and colon-pos (position #\. display :start colon-pos))))
     (unless colon-pos
-      (error "The display specification \"~A\" is ill-formed: missing colon" display))
+      (error "The display specification \"~A\" is ill-formed: missing colon"
+             display))
     (let ((display-number
-           (parse-integer (subseq display (1+ colon-pos) period-pos) :junk-allowed t)))
+            (parse-integer
+             (subseq display (1+ colon-pos) period-pos) :junk-allowed t)))
       (unless (numberp display-number)
-        (error "The display specification \"~A\" is invalid: bad display number" display))
+        (error "The display specification \"~A\" is invalid: bad display number"
+               display))
       display-number)))
 
 (defun get-display-name (display)
@@ -239,15 +242,24 @@ because the new value is not one the server needs (a stipple of 0).
                     (setf (,accessor gem-gc) v)
                     (values t ,bit slot v)))))
     (case slot
-      (:function   (stage gem-gc-function   +gc-function+   (xcb-resolve-function value)))
-      (:foreground (stage gem-gc-foreground +gc-foreground+ (or value *black*)))
-      (:background (stage gem-gc-background +gc-background+ (or value *white*)))
-      (:line-width (stage gem-gc-line-width +gc-line-width+ (or value 0)))
-      (:line-style (stage gem-gc-line-style +gc-line-style+ (xcb-line-style-val value)))
-      (:cap-style  (stage gem-gc-cap-style  +gc-cap-style+  (xcb-cap-style-val value)))
-      (:join-style (stage gem-gc-join-style +gc-join-style+ (xcb-join-style-val value)))
-      (:fill-style (stage gem-gc-fill-style +gc-fill-style+ (xcb-fill-style-val value)))
-      (:fill-rule  (stage gem-gc-fill-rule  +gc-fill-rule+  (xcb-fill-rule-val value)))
+      (:function
+       (stage gem-gc-function   +gc-function+   (xcb-resolve-function value)))
+      (:foreground
+       (stage gem-gc-foreground +gc-foreground+ (or value *black*)))
+      (:background
+       (stage gem-gc-background +gc-background+ (or value *white*)))
+      (:line-width
+       (stage gem-gc-line-width +gc-line-width+ (or value 0)))
+      (:line-style
+       (stage gem-gc-line-style +gc-line-style+ (xcb-line-style-val value)))
+      (:cap-style
+       (stage gem-gc-cap-style  +gc-cap-style+  (xcb-cap-style-val value)))
+      (:join-style
+       (stage gem-gc-join-style +gc-join-style+ (xcb-join-style-val value)))
+      (:fill-style
+       (stage gem-gc-fill-style +gc-fill-style+ (xcb-fill-style-val value)))
+      (:fill-rule
+       (stage gem-gc-fill-rule  +gc-fill-rule+  (xcb-fill-rule-val value)))
       (:stipple
        (let ((v (or value 0)))
          (unless (eql v (gem-gc-stipple gem-gc))
@@ -303,8 +315,14 @@ GEM-GC's cache like XCB-SET-GC-ATTRIBUTE and returns T if SLOT changed.
 Every change staged in BODY is sent in a single ChangeGC request when BODY
 exits, so the server-side GC always matches the cache.  :CLIP-MASK cannot be
 staged."
-  (let ((c (gensym "CONN")) (g (gensym "GC")) (mask (gensym "MASK")) (args (gensym "ARGS")))
-    `(let ((,c ,conn) (,g ,gem-gc) (,mask 0) (,args '()))
+  (let ((c (gensym "CONN"))
+        (g (gensym "GC"))
+        (mask (gensym "MASK"))
+        (args (gensym "ARGS")))
+    `(let ((,c ,conn)
+           (,g ,gem-gc)
+           (,mask 0)
+           (,args '()))
        (flet ((,stage-fn (slot value)
                 (multiple-value-bind (changed bit key v)
                     (xcb-stage-gc-attribute ,g slot value)
@@ -326,7 +344,8 @@ staged."
             (logior (ash r 16) (ash g 8) b)))
       (if (numberp color) color default)))
 
-(defun set-xcb-line-style (conn line-style gem-gc root-window &optional (draw-fn +gx-copy+))
+(defun set-xcb-line-style (conn line-style gem-gc root-window
+                           &optional (draw-fn +gx-copy+))
   (declare (ignore root-window))
   (when line-style
     (let ((fn (xcb-resolve-function draw-fn)))
@@ -336,8 +355,12 @@ staged."
           (unless (eql fn +gx-noop+)
             (when (or draw-fn-changed?
                       (not (eq line-style (gem-gc-opal-style gem-gc))))
-              (stage :foreground (xcb-color-to-pixel (g-value line-style :foreground-color) *black*))
-              (stage :background (xcb-color-to-pixel (g-value line-style :background-color) *white*)))
+              (stage :foreground (xcb-color-to-pixel (g-value line-style
+                                                              :foreground-color)
+                                                     *black*))
+              (stage :background (xcb-color-to-pixel (g-value line-style
+                                                              :background-color)
+                                                     *white*)))
             (unless (eq line-style (gem-gc-opal-style gem-gc))
               (setf (gem-gc-opal-style gem-gc) line-style)
               (stage :line-width (or (g-value line-style :line-thickness) 0))
@@ -348,44 +371,66 @@ staged."
 
 (defun xcb-get-stipple-pixmap (style-schema root-window)
   "Get or create an X11 depth-1 pixmap for a Garnet stipple filling style."
-  (let ((stipple-schema (and style-schema (schema-p style-schema) (g-value style-schema :stipple))))
+  (let ((stipple-schema (and style-schema
+                             (schema-p style-schema)
+                             (g-value style-schema :stipple))))
     (when stipple-schema
-      (let ((root-plist (g-value stipple-schema :root-pixmap-plist)))
-        (or (getf root-plist root-window)
-            (let* ((the-image (or (g-value stipple-schema :image)
-                                  (let ((pct (g-value stipple-schema :percent)))
-                                    (when (numberp pct)
-                                      (let ((idx (round (* (max 0 (min 100 pct)) 16) 100)))
-                                        (xcb-device-image (or root-window *default-xcb-root*) idx)))))))
-              (when the-image
-                (let* ((w (if (xcb-image-p the-image) (xcb-image-width the-image) 16))
-                       (h (if (xcb-image-p the-image) (xcb-image-height the-image) 16))
-                       (pixmap (xcb-create-pixmap (or root-window *default-xcb-root*)
-                                                  w h 1 the-image t)))
-                  (s-value stipple-schema :root-pixmap-plist
-                           (list* root-window pixmap root-plist))
-                  pixmap))))))))
+      (labels ((stipple-image ()
+                 (or (g-value stipple-schema :image)
+                     (let ((percent (g-value stipple-schema :percent)))
+                       (when (numberp percent)
+                         (let ((index (round (* (max 0 (min 100 percent)) 16) 100)))
+                           (xcb-device-image (or root-window
+                                                 *default-xcb-root*)
+                                             index))))))
+               (make-pixmap (image)
+                 (let ((width  (if (xcb-image-p image)
+                                   (xcb-image-width image)
+                                   16))
+                       (height (if (xcb-image-p image)
+                                   (xcb-image-height image)
+                                   16)))
+                   (xcb-create-pixmap (or root-window *default-xcb-root*)
+                                      width height 1 image t))))
+        (let* ((root-plist (g-value stipple-schema :root-pixmap-plist))
+               (cached-pixmap (getf root-plist root-window)))
+          (or cached-pixmap
+              (let ((image (stipple-image)))
+                (when image
+                  (let ((pixmap (make-pixmap image)))
+                    (s-value stipple-schema :root-pixmap-plist
+                             (list* root-window pixmap root-plist))
+                    pixmap)))))))))
 
-(defun set-xcb-filling-style (conn filling-style gem-gc root-window &optional (draw-fn +gx-copy+))
+(defun set-xcb-filling-style (conn filling-style gem-gc root-window
+                              &optional (draw-fn +gx-copy+))
+  "Configure GEM-GC to draw with FILLING-STYLE using the XCB backend."
   (when filling-style
     (let ((fn (xcb-resolve-function draw-fn)))
       (with-xcb-gc-changes (stage conn gem-gc)
         ;; Like the CLX backend: with :no-op nothing is drawn, so only the
         ;; function is set.
         (unless (eql fn +gx-noop+)
-          (when (or (stage :function fn)
-                    (not (eq filling-style (gem-gc-opal-style gem-gc))))
-            (stage :foreground (xcb-color-to-pixel (g-value filling-style :foreground-color) *black*))
-            (stage :background (xcb-color-to-pixel (g-value filling-style :background-color) *white*)))
-          (unless (eq filling-style (gem-gc-opal-style gem-gc))
-            (setf (gem-gc-opal-style gem-gc) filling-style)
-            (stage :fill-style (g-value filling-style :fill-style))
-            (stage :fill-rule (g-value filling-style :fill-rule)))
-          ;; Outside the UNLESS, as in CLX: the same filling style has a
-          ;; different stipple pixmap on each root window.
-          (let ((stipple (xcb-get-stipple-pixmap filling-style root-window)))
-            (when stipple
-              (stage :stipple stipple))))
+          (let ((style-changed (not (eq filling-style (gem-gc-opal-style gem-gc)))))
+            ;; Colors are refreshed when either the draw function or the
+            ;; filling style has changed.
+            (when (or (stage :function fn) style-changed)
+              (stage :foreground
+                     (xcb-color-to-pixel (g-value filling-style :foreground-color)
+                                         *black*))
+              (stage :background
+                     (xcb-color-to-pixel (g-value filling-style :background-color)
+                                         *white*)))
+            ;; Fill style and rule only change when the style itself does.
+            (when style-changed
+              (setf (gem-gc-opal-style gem-gc) filling-style)
+              (stage :fill-style (g-value filling-style :fill-style))
+              (stage :fill-rule  (g-value filling-style :fill-rule)))
+            ;; Outside the STYLE-CHANGED check, as in CLX: the same filling
+            ;; style has a different stipple pixmap on each root window.
+            (let ((stipple (xcb-get-stipple-pixmap filling-style root-window)))
+              (when stipple
+                (stage :stipple stipple)))))
         (stage :function fn)))))
 
 
@@ -557,7 +602,8 @@ staged."
 
 (defun xcb-check-wm-delete-window (root-window type data format)
   (and (eq format 32)
-       (let ((conn (xcb-display (or root-window (g-value gem:device-info :current-root)))))
+       (let* ((root (or root-window (g-value gem:device-info :current-root)))
+              (conn (xcb-display root)))
          (and conn
               (let ((wm-protocols (xcb:intern-atom-id conn "WM_PROTOCOLS"))
                     (wm-delete (xcb:intern-atom-id conn "WM_DELETE_WINDOW")))
@@ -878,11 +924,13 @@ and blue from 0 to 1 and returns the pixel; :ALLOC-COLOR returns it as is;
                       (single-float x)
                       (ratio
                        ;; Converting a ratio is always a full call.
-                       (locally (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
+                       (locally
+                           (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
                          (coerce x 'single-float)))
                       (t
                        ;; Integers and double-floats.
-                       (locally (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
+                       (locally
+                           (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
                          (float x 1.0f0))))))
              (declare (type single-float f))
              (round (* 255.0f0 (max 0.0f0 (min 1.0f0 f)))))))
@@ -1058,7 +1106,9 @@ reused by the next call, so the result must not be kept."
 (defun xcb-draw-arc (window x y width height angle1 angle2 function
                     line-style fill-style &optional pie-slice-p)
   (declare (ignore pie-slice-p))
-  (let* ((thickness (if line-style (max 1 (g-value line-style :line-thickness)) 0))
+  (let* ((thickness (if line-style
+                        (max 1 (g-value line-style :line-thickness))
+                        0))
          (thickness2 (* thickness 2))
          (fill-width (max 0 (- width thickness2)))
          (fill-height (max 0 (- height thickness2)))
@@ -1119,14 +1169,20 @@ reused by the next call, so the result must not be kept."
         (set-xcb-filling-style conn fill-style gem-gc root-window function)
         ;; Center rectangle and two side rectangles
         (let ((rects (list (make-instance 'xcb:rectangle
-                                          :x (+ left r) :y top-f
-                                          :width (- width r r) :height (max 0 (- height th th)))
+                                          :x (+ left r)
+                                          :y top-f
+                                          :width (- width r r)
+                                          :height (max 0 (- height th th)))
                            (make-instance 'xcb:rectangle
-                                          :x (+ left th) :y top-l
-                                          :width side-w :height side-h)
+                                          :x (+ left th)
+                                          :y top-l
+                                          :width side-w
+                                          :height side-h)
                            (make-instance 'xcb:rectangle
-                                          :x right-l :y top-l
-                                          :width side-w :height side-h))))
+                                          :x right-l
+                                          :y top-l
+                                          :width side-w
+                                          :height side-h))))
           (xcb:poly-fill-rectangle conn drawable gc-xid rects))
         ;; Four filled corner arcs (90 degrees each = 5760 units)
         (let* ((right-f (+ (- right-l x-radius) th))
@@ -1139,18 +1195,30 @@ reused by the next call, so the result must not be kept."
                (c-h-f (max 0 (- c-h th2)))
                (c-w-f+1 (+ c-w-f (if line-style 1 0)))
                (c-h-f+1 (+ c-h-f (if line-style 1 0)))
-               (arcs (list (make-instance 'xcb:arc :x right-f :y top-f-1
-                                                   :width c-w-f :height c-h-f+1
-                                                   :angle1 0 :angle2 +deg-90*64+)
-                           (make-instance 'xcb:arc :x (- left-f 1) :y (- top-f 1)
-                                                   :width (+ c-w-f 1) :height (+ c-h-f 1)
-                                                   :angle1 +deg-90*64+ :angle2 +deg-90*64+)
-                           (make-instance 'xcb:arc :x left-f-1 :y bottom-f
-                                                   :width c-w-f+1 :height c-h-f
-                                                   :angle1 +deg-180*64+ :angle2 +deg-90*64+)
-                           (make-instance 'xcb:arc :x right-f :y bottom-f
-                                                   :width c-w-f :height c-w-f
-                                                   :angle1 +deg-270*64+ :angle2 +deg-90*64+))))
+               (arcs (list (make-instance 'xcb:arc :x right-f
+                                                   :y top-f-1
+                                                   :width c-w-f
+                                                   :height c-h-f+1
+                                                   :angle1 0
+                                                   :angle2 +deg-90*64+)
+                           (make-instance 'xcb:arc :x (- left-f 1)
+                                                   :y (- top-f 1)
+                                                   :width (+ c-w-f 1)
+                                                   :height (+ c-h-f 1)
+                                                   :angle1 +deg-90*64+
+                                                   :angle2 +deg-90*64+)
+                           (make-instance 'xcb:arc :x left-f-1
+                                                   :y bottom-f
+                                                   :width c-w-f+1
+                                                   :height c-h-f
+                                                   :angle1 +deg-180*64+
+                                                   :angle2 +deg-90*64+)
+                           (make-instance 'xcb:arc :x right-f
+                                                   :y bottom-f
+                                                   :width c-w-f
+                                                   :height c-w-f
+                                                   :angle1 +deg-270*64+
+                                                   :angle2 +deg-90*64+))))
           (xcb:poly-fill-arc conn drawable gc-xid arcs))))
     (when line-style
       (let* ((gem-gc (display-info-line-style-gc display-info))
@@ -1167,27 +1235,51 @@ reused by the next call, so the result must not be kept."
              (c-h-line (max 0 (- c-h th))))
         (set-xcb-line-style conn line-style gem-gc root-window function)
         ;; Four border segments
-        (let ((segs (list (make-instance 'xcb:segment :x1 left-w :y1 y :x2 right :y2 y)
-                          (make-instance 'xcb:segment :x1 left-w :y1 y1 :x2 right :y2 y1)
-                          (make-instance 'xcb:segment :x1 l :y1 up :x2 l :y2 down)
-                          (make-instance 'xcb:segment :x1 l1 :y1 up :x2 l1 :y2 down))))
+        (let ((segs (list (make-instance 'xcb:segment :x1 left-w
+                                                      :y1 y :x2
+                                                      right :y2 y)
+                          (make-instance 'xcb:segment :x1 left-w
+                                                      :y1 y1
+                                                      :x2 right
+                                                      :y2 y1)
+                          (make-instance 'xcb:segment :x1 l
+                                                      :y1 up
+                                                      :x2 l
+                                                      :y2 down)
+                          (make-instance 'xcb:segment :x1 l1
+                                                      :y1 up
+                                                      :x2 l1
+                                                      :y2 down))))
           (xcb:poly-segment conn drawable gc-xid segs))
         ;; Four corner arcs
         (let* ((arc-left (+ left th\2 (if (< th 2) -1 0)))
                (arc-right (+ left width (- c-w-line) (- th\2) (if (< th 2) 0 -1)))
                (arc-bottom (+ top height (- c-h-line) (- th\2) (if (<= th 3) 0 -1)))
-               (arcs (list (make-instance 'xcb:arc :x arc-right :y (+ top th/2)
-                                                   :width c-w-line :height c-h-line
-                                                   :angle1 0 :angle2 +deg-90*64+)
-                           (make-instance 'xcb:arc :x arc-left :y (+ top th/2)
-                                                   :width c-w-line :height c-h-line
-                                                   :angle1 +deg-90*64+ :angle2 +deg-90*64+)
-                           (make-instance 'xcb:arc :x arc-left :y arc-bottom
-                                                   :width c-w-line :height c-h-line
-                                                   :angle1 +deg-180*64+ :angle2 +deg-90*64+)
-                           (make-instance 'xcb:arc :x arc-right :y arc-bottom
-                                                   :width c-w-line :height c-h-line
-                                                   :angle1 +deg-270*64+ :angle2 +deg-90*64+))))
+               (arcs (list
+                      (make-instance 'xcb:arc :x arc-right
+                                              :y (+ top th/2)
+                                              :width c-w-line
+                                              :height c-h-line
+                                              :angle1 0
+                                              :angle2 +deg-90*64+)
+                      (make-instance 'xcb:arc :x arc-left
+                                              :y (+ top th/2)
+                                              :width c-w-line
+                                              :height c-h-line
+                                              :angle1 +deg-90*64+
+                                              :angle2 +deg-90*64+)
+                      (make-instance 'xcb:arc :x arc-left
+                                              :y arc-bottom
+                                              :width c-w-line
+                                              :height c-h-line
+                                              :angle1 +deg-180*64+
+                                              :angle2 +deg-90*64+)
+                      (make-instance 'xcb:arc :x arc-right
+                                              :y arc-bottom
+                                              :width c-w-line
+                                              :height c-h-line
+                                              :angle1 +deg-270*64+
+                                              :angle2 +deg-90*64+))))
           (xcb:poly-arc conn drawable gc-xid arcs))))))
 
 (defun xcb-set-clip-mask (window clip-mask &optional lstyle-ogc fstyle-ogc)
@@ -1241,14 +1333,17 @@ reused by the next call, so the result must not be kept."
                      (first all-fams)))))
          (available-subs (xcb-truetype:get-font-subfamilies fam))
          (target-sub (case face
-                       (:bold (or (find "Bold" available-subs :test #'string-equal)
-                                  (first available-subs)))
-                       (:italic (or (find "Italic" available-subs :test #'string-equal)
-                                    (find "Oblique" available-subs :test #'string-equal)
-                                    (first available-subs)))
-                       (:bold-italic (or (find "Bold Italic" available-subs :test #'string-equal)
-                                         (find "Bold Oblique" available-subs :test #'string-equal)
-                                         (first available-subs)))
+                       (:bold
+                        (or (find "Bold" available-subs :test #'string-equal)
+                            (first available-subs)))
+                       (:italic
+                        (or (find "Italic" available-subs :test #'string-equal)
+                            (find "Oblique" available-subs :test #'string-equal)
+                            (first available-subs)))
+                       (:bold-italic
+                        (or (find "Bold Italic" available-subs :test #'string-equal)
+                            (find "Bold Oblique" available-subs :test #'string-equal)
+                            (first available-subs)))
                        (t (or (find "Regular" available-subs :test #'string-equal)
                               (find "Book" available-subs :test #'string-equal)
                               (first available-subs))))))
@@ -1311,7 +1406,8 @@ reused by the next call, so the result must not be kept."
 (defun xcb-font-exists-p (root-window name)
   (declare (ignore root-window))
   (ensure-xcb-truetype-initialized)
-  (not (null (find (string name) (xcb-truetype:get-font-families) :test #'string-equal))))
+  (not (null (find (string name) (xcb-truetype:get-font-families)
+                   :test #'string-equal))))
 
 (defun xcb-font-name-p (root-window arg)
   (declare (ignore root-window))
@@ -1404,7 +1500,8 @@ that refer to it."
                                'xcb-truetype:window)
                            :connection conn
                            :id drawable-xid
-                           :screen screen))))
+                           :screen screen
+                           :owned t))))
 
 ;;; An xcb-truetype drawable owns a RENDER picture once text has been drawn on
 ;;; it, and has a finalizer that frees the picture and the drawable itself.  So
@@ -1799,7 +1896,8 @@ does not have to be tiled here."
              (h (max 1 (round (or height (g-value window :height) 1))))
              (x (round (or left 0)))
              (y (round (or top 0)))
-             (cookie (xcb:get-image conn +image-format-z-pixmap+ drawable x y w h #xffffffff))
+             (cookie (xcb:get-image conn +image-format-z-pixmap+
+                                    drawable x y w h #xffffffff))
              (reply (xcb:get-image-reply conn cookie)))
         (when reply
           (let* ((depth (xcb:depth reply))
@@ -1855,7 +1953,10 @@ does not have to be tiled here."
                              (dolist (tok tokens)
                                (when (and (> (length tok) 2)
                                           (string-equal (subseq tok 0 2) "0x"))
-                                 (push (or (parse-integer (subseq tok 2) :radix 16 :junk-allowed t) 0)
+                                 (push (or (parse-integer (subseq tok 2)
+                                                          :radix 16
+                                                          :junk-allowed t)
+                                           0)
                                        bytes))))
                            (when (search "}" l)
                              (setf in-data nil))
@@ -1880,7 +1981,9 @@ does not have to be tiled here."
   "Write an XCB-IMAGE to PATHNAME in standard X11 bitmap (.xbm) format."
   (declare (ignore root-window))
   (when (xcb-image-p image)
-    (with-open-file (stream pathname :direction :output :if-exists :supersede :if-does-not-exist :create)
+    (with-open-file (stream pathname :direction :output
+                                     :if-exists :supersede
+                                     :if-does-not-exist :create)
       (let* ((w (xcb-image-width image))
              (h (xcb-image-height image))
              (name (pathname-name pathname))
@@ -2216,7 +2319,8 @@ its events for XCB:POLL-FOR-EVENT."
            (unless ignore-keys
              (let ((win (xcb-window-from-drawable root-window event-win)))
                (when win
-                 (interactors::do-button-press win x y state code time :button-press))))))
+                 (interactors::do-button-press
+                   win x y state code time :button-press))))))
         (xcb:button-release
          (let ((event-win (slot-value ev 'xcb:event))
                (x (slot-value ev 'xcb:event-x))
@@ -2227,7 +2331,8 @@ its events for XCB:POLL-FOR-EVENT."
            (unless ignore-keys
              (let ((win (xcb-window-from-drawable root-window event-win)))
                (when win
-                 (interactors::do-button-release win x y state code time :button-release))))
+                 (interactors::do-button-release
+                   win x y state code time :button-release))))
            (setf *last-button-press* nil)))
         (xcb:motion-notify
          (let ((event-win (slot-value ev 'xcb:event))
@@ -2263,8 +2368,9 @@ its events for XCB:POLL-FOR-EVENT."
                (height (slot-value ev 'xcb:height))
                (count (slot-value ev 'xcb:count)))
            (when (xcb-connected-window-p event-win)
-             (interactors::do-exposure (xcb-window-from-drawable root-window event-win)
-                                       x y width height count conn))))
+             (interactors::do-exposure
+                 (xcb-window-from-drawable root-window event-win)
+               x y width height count conn))))
         (xcb:configure-notify
          (let ((event-win (slot-value ev 'xcb:window))
                (x (slot-value ev 'xcb:x))
@@ -2273,14 +2379,17 @@ its events for XCB:POLL-FOR-EVENT."
                (height (slot-value ev 'xcb:height))
                (above-sibling (slot-value ev 'xcb:above-sibling)))
            (when (xcb-connected-window-p event-win)
-             (interactors::do-configure-notify (xcb-window-from-drawable root-window event-win)
-                                               x y width height above-sibling))))
+             (interactors::do-configure-notify
+                 (xcb-window-from-drawable root-window event-win)
+               x y width height above-sibling))))
         (xcb:map-notify
          (let ((event-win (slot-value ev 'xcb:window)))
-           (interactors::do-map-notify (xcb-window-from-drawable root-window event-win))))
+           (interactors::do-map-notify
+               (xcb-window-from-drawable root-window event-win))))
         (xcb:unmap-notify
          (let ((event-win (slot-value ev 'xcb:window)))
-           (interactors::do-unmap-notify (xcb-window-from-drawable root-window event-win))))
+           (interactors::do-unmap-notify
+               (xcb-window-from-drawable root-window event-win))))
         (xcb:client-message
          (let* ((event-win (slot-value ev 'xcb:window))
                 (fmt (slot-value ev 'xcb:format))
@@ -2294,8 +2403,11 @@ its events for XCB:POLL-FOR-EVENT."
                                                         (elt raw-words i)
                                                         0))))
                 (timer-atom (xcb:intern-atom-id conn "TIMER_EVENT"))
-                (effective-type (if (eql msg-type timer-atom) :TIMER_EVENT msg-type)))
-           (interactors::do-client-message event-win effective-type data32 fmt conn)))
+                (effective-type (if (eql msg-type timer-atom)
+                                    :TIMER_EVENT
+                                    msg-type)))
+           (interactors::do-client-message
+             event-win effective-type data32 fmt conn)))
         (xcb:destroy-notify
          (let ((event-win (slot-value ev 'xcb:window)))
            (remhash event-win *drawable-to-window-table*)
@@ -2325,7 +2437,8 @@ its events for XCB:POLL-FOR-EVENT."
                ;; warning at the end of compiling this file.
                `(progn
                   ,@(loop for key in keys
-                          for fn = (intern (format nil "XCB-~A" (symbol-name key)) '#:gem)
+                          for fn = (intern (format nil "XCB-~A"
+                                                   (symbol-name key)) '#:gem)
                           collect `(attach-method xcb-device ,key #',fn)))))
     (attach-xcb-devices
       ;; Device & window queries
