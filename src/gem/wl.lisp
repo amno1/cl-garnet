@@ -1229,7 +1229,8 @@ rectangles, segments and quarter arcs."
       (maphash (lambda (key value)
                  (when (eq value tt-font)
                    (remhash key *wl-font-cache-table*)))
-               *wl-font-cache-table*)))
+               *wl-font-cache-table*)
+      (clrhash *wl-layout-cache*)))
   t)
 
 (defun wl-font-max-min-width (root-window font min-too)
@@ -1261,6 +1262,24 @@ rectangles, segments and quarter arcs."
          (descent (abs (truetype:font-descent *wl-dpi* tt-font))))
     (values width ascent descent 0 width width)))
 
+(defparameter *wl-layout-cache* (make-hash-table :test 'equal)
+  "(font . string) -> its glyph layout.  Opal draws the same strings again
+and again, and laying one out takes the font loader's lock and exact
+arithmetic on every glyph.")
+
+(defun wl-layout (tt-font string)
+  (let ((key (cons tt-font string)))
+    (or (gethash key *wl-layout-cache*)
+        (progn
+          (when (> (hash-table-count *wl-layout-cache*) 4000)
+            (clrhash *wl-layout-cache*))
+          (setf (gethash (cons tt-font (copy-seq string)) *wl-layout-cache*)
+                (map 'vector (lambda (entry)
+                               (destructuring-bind (index pen image) entry
+                                 (declare (ignore index))
+                                 (cons (round pen) image)))
+                     (truetype:layout-glyphs tt-font string *wl-dpi* *wl-dpi*)))))))
+
 (defun wl-draw-text (window x y string font function line-style
                      &optional fill-background invert-p)
   (declare (ignore function))
@@ -1284,10 +1303,10 @@ rectangles, segments and quarter arcs."
         (when fill-background
           (px-clear-rectangle-clipped s clip x (- y ascent) (max 1 width) (max 1 (+ ascent descent))
                                       (if invert-p style-fg style-bg)))
-        (loop for (nil pen image) across (truetype:layout-glyphs tt-font str *wl-dpi* *wl-dpi*)
+        (loop for (pen . image) across (wl-layout tt-font str)
               when (plusp (truetype:glyph-image-width image))
                 do (px-blend-alpha s clip
-                                   (- (+ x (round pen)) (truetype:glyph-image-x image))
+                                   (- (+ x pen) (truetype:glyph-image-x image))
                                    (- y (truetype:glyph-image-y image))
                                    (truetype:glyph-image-width image)
                                    (truetype:glyph-image-height image)

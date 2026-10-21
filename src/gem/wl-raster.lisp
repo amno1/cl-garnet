@@ -95,6 +95,80 @@ is new with BACKGROUND."
 (defun px-mask (s)
   (if (= (px-surface-depth s) 1) 1 #xFFFFFF))
 
+;;; Row kernels.  Everything that writes many pixels goes through these
+;;; three, on spans already clipped: the place for faster, SIMD versions.
+
+(deftype px-pixels () '(simple-array (unsigned-byte 32) (*)))
+
+(defmacro px-dispatch-function ((fn) &body body)
+  "Expand BODY once per raster function, with OP bound by MACROLET to the
+function's operation on SRC and DST, so a loop in BODY has no dispatch."
+  `(ecase ,fn
+     ,@(loop for code from 0 to 15
+             for form in '(0 (logand src dst) (logand src (lognot dst)) src
+                           (logand (lognot src) dst) dst (logxor src dst)
+                           (logior src dst) (lognot (logior src dst))
+                           (lognot (logxor src dst)) (lognot dst)
+                           (logior src (lognot dst)) (lognot src)
+                           (logior (lognot src) dst) (lognot (logand src dst))
+                           #xFFFFFFFF)
+             collect `(,code (macrolet ((op (src dst)
+                                          `(let ((src ,src) (dst ,dst))
+                                             (declare (type (unsigned-byte 32) src dst)
+                                                      (ignorable src dst))
+                                             (logand #xFFFFFFFF ,',form))))
+                               ,@body)))))
+
+(defun px-row-op (dpix di spix si n fn mask)
+  "DPIX[DI..DI+N) := FN(SPIX[SI..SI+N), DPIX[DI..DI+N)), masked by MASK.
+For GXcopy SPIX may be DPIX with the ranges overlapping."
+  (declare (type px-pixels dpix spix) (type fixnum di si n fn)
+           (type (unsigned-byte 32) mask)
+           (optimize (speed 3) (safety 0)))
+  (if (and (= fn +px-gx-copy+) (= mask #xFFFFFF))
+      (replace dpix spix :start1 di :end1 (+ di n) :start2 si)
+      (px-dispatch-function (fn)
+        (loop for i of-type fixnum from 0 below n
+              for d of-type fixnum = (+ di i)
+              do (setf (aref dpix d)
+                       (logand mask (op (aref spix (+ si i)) (aref dpix d))))))))
+
+(defun px-row-fill (dpix di n pixel fn mask)
+  "DPIX[DI..DI+N) := FN(PIXEL, DPIX[...]), masked by MASK."
+  (declare (type px-pixels dpix) (type fixnum di n fn)
+           (type (unsigned-byte 32) pixel mask)
+           (optimize (speed 3) (safety 0)))
+  (if (= fn +px-gx-copy+)
+      (fill dpix (logand pixel mask) :start di :end (+ di n))
+      (px-dispatch-function (fn)
+        (loop for d of-type fixnum from di below (+ di n)
+              do (setf (aref dpix d) (logand mask (op pixel (aref dpix d))))))))
+
+(defun px-row-blend (dpix di alpha ai n colour)
+  "Blend COLOUR into DPIX[DI..DI+N) by the coverage ALPHA[AI..AI+N)."
+  (declare (type px-pixels dpix) (type (simple-array (unsigned-byte 8) (*)) alpha)
+           (type fixnum di ai n) (type (unsigned-byte 32) colour)
+           (optimize (speed 3) (safety 0)))
+  (let ((fr (ldb (byte 8 16) colour))
+        (fg (ldb (byte 8 8) colour))
+        (fb (ldb (byte 8 0) colour)))
+    (declare (type (unsigned-byte 8) fr fg fb))
+    (dotimes (i n)
+      (let ((a (aref alpha (+ ai i))))
+        (declare (type (unsigned-byte 8) a))
+        (cond ((= a 0))
+              ((= a 255) (setf (aref dpix (+ di i)) colour))
+              (t
+               (let* ((d (aref dpix (+ di i)))
+                      (na (- 255 a)))
+                 (declare (type (unsigned-byte 32) d) (type (unsigned-byte 8) na))
+                 (flet ((mix (f shift)
+                          (declare (type (unsigned-byte 8) f) (type (integer 0 16) shift))
+                          (the (unsigned-byte 8)
+                               (floor (+ (* a f) (* na (ldb (byte 8 shift) d))) 255))))
+                   (setf (aref dpix (+ di i))
+                         (logior (ash (mix fr 16) 16) (ash (mix fg 8) 8) (mix fb 0)))))))))))
+
 ;;; Spans
 
 (defun px-row-intervals (s clip y)
@@ -136,10 +210,7 @@ and disjoint, as a list of conses."
              (type fixnum row fn) (type (unsigned-byte 32) mask fg bg))
     (cond
       ((or (eq fill :solid) (null st))
-       (if (= fn +px-gx-copy+)
-           (fill pixels fg :start (+ row a) :end (+ row b))
-           (loop for i of-type fixnum from (+ row a) below (+ row b)
-                 do (setf (aref pixels i) (px-op fn fg (aref pixels i) mask)))))
+       (px-row-fill pixels (+ row a) (- b a) fg fn mask))
       (t
        (let* ((st-pixels (px-surface-pixels st))
               (sw (px-surface-width st))
@@ -201,7 +272,14 @@ and disjoint, as a list of conses."
 X0 Y0 X1 Y1 ..., together, by RULE (:EVEN-ODD or :WINDING).  As in X, a
 pixel's centre is at its integer coordinates, and the pixel is drawn when
 its centre is inside, or on a left or top edge."
-  (let ((edges '()) (ymin most-positive-fixnum) (ymax most-negative-fixnum))
+  ;; Edges, five doubles each: top x, top y, bottom x, bottom y, and
+  ;; the winding direction.
+  (let* ((n-edges (loop for p in paths
+                        sum (let ((n (floor (length p) 2))) (if (>= n 3) n 0))))
+         (edges (make-array (* 5 n-edges) :element-type 'double-float))
+         (count 0)
+         (ymin most-positive-fixnum) (ymax most-negative-fixnum))
+    (declare (type fixnum count))
     (dolist (p paths)
       (let ((n (floor (length p) 2)))
         (when (>= n 3)
@@ -212,38 +290,64 @@ its centre is inside, or on a left or top edge."
               (unless (= y0 y1)
                 (setf ymin (min ymin (floor (min y0 y1)))
                       ymax (max ymax (ceiling (max y0 y1))))
-                (push (if (< y0 y1)
-                          (vector x0 y0 x1 y1 1)
-                          (vector x1 y1 x0 y0 -1))
-                      edges)))))))
-    (when edges
-      (let ((edges (sort (coerce edges 'simple-vector) #'< :key (lambda (e) (aref e 1))))
-            (xs (make-array 16 :adjustable t :fill-pointer 0)))
-        (loop for y from (max ymin 0) to (min ymax (1- (px-surface-height s)))
-              for yc = (float y 1d0)
-              do (setf (fill-pointer xs) 0)
-                 (loop for e across edges
-                       while (<= (aref e 1) yc)
-                       do (let ((ey0 (aref e 1)) (ey1 (aref e 3)))
-                            (when (and (<= ey0 yc) (< yc ey1))
-                              (let ((ex0 (aref e 0)) (ex1 (aref e 2)))
-                                (vector-push-extend
-                                 (cons (+ ex0 (/ (* (- yc ey0) (- ex1 ex0)) (- ey1 ey0)))
-                                       (aref e 4))
-                                 xs)))))
-                 (when (plusp (fill-pointer xs))
-                   (let ((sorted (sort xs #'< :key #'car)))
-                     (flet ((span (xa xb)
-                              (px-span s gc y (ceiling xa) (ceiling xb))))
-                       (if (eq rule :winding)
-                           (let ((wind 0) (start 0d0))
-                             (loop for (x . dir) across sorted
-                                   do (let ((was wind))
-                                        (incf wind dir)
-                                        (cond ((and (zerop was) (/= wind 0)) (setf start x))
-                                              ((and (/= was 0) (zerop wind)) (span start x))))))
-                           (loop for i from 0 below (1- (length sorted)) by 2
-                                 do (span (car (aref sorted i)) (car (aref sorted (1+ i))))))))))))))
+                (let ((e (* 5 count)))
+                  (if (< y0 y1)
+                      (setf (aref edges e) x0 (aref edges (+ e 1)) y0
+                            (aref edges (+ e 2)) x1 (aref edges (+ e 3)) y1
+                            (aref edges (+ e 4)) 1d0)
+                      (setf (aref edges e) x1 (aref edges (+ e 1)) y1
+                            (aref edges (+ e 2)) x0 (aref edges (+ e 3)) y0
+                            (aref edges (+ e 4)) -1d0)))
+                (incf count)))))))
+    (when (plusp count)
+      (px-fill-edges s gc edges count
+                     (max ymin 0) (min ymax (1- (px-surface-height s)))
+                     (eq rule :winding)))))
+
+(defun px-fill-edges (s gc edges count y-start y-end winding)
+  (declare (type (simple-array double-float (*)) edges)
+           (type fixnum count y-start y-end)
+           (optimize (speed 3) (safety 0)))
+  (let ((xs (make-array count :element-type 'double-float))
+        (dirs (make-array count :element-type 'fixnum)))
+    (loop for y of-type fixnum from y-start to y-end
+          for yc of-type double-float = (float y 1d0)
+          do (let ((m 0))
+               (declare (type fixnum m))
+               (loop for k of-type fixnum from 0 below count
+                     for e of-type fixnum = (* 5 k)
+                     for ey0 of-type double-float = (aref edges (+ e 1))
+                     do (let ((ey1 (aref edges (+ e 3))))
+                          (when (and (<= ey0 yc) (< yc ey1))
+                            (let* ((ex0 (aref edges e))
+                                   (x (+ ex0 (/ (* (- yc ey0) (- (aref edges (+ e 2)) ex0))
+                                                (- ey1 ey0))))
+                                   (dir (if (plusp (aref edges (+ e 4))) 1 -1)))
+                              (declare (type double-float x))
+                              ;; Insertion sort: a row crosses few edges.
+                              (let ((i m))
+                                (declare (type fixnum i))
+                                (loop while (and (> i 0) (> (aref xs (1- i)) x))
+                                      do (setf (aref xs i) (aref xs (1- i))
+                                               (aref dirs i) (aref dirs (1- i)))
+                                         (decf i))
+                                (setf (aref xs i) x (aref dirs i) dir))
+                              (incf m)))))
+               (flet ((span (xa xb)
+                        (declare (type double-float xa xb))
+                        (let ((a (ceiling (max -1d9 (min 1d9 xa))))
+                              (b (ceiling (max -1d9 (min 1d9 xb)))))
+                          (px-span s gc y a b))))
+                 (if winding
+                     (let ((wind 0) (start 0d0))
+                       (declare (type fixnum wind) (type double-float start))
+                       (dotimes (i m)
+                         (let ((was wind))
+                           (incf wind (aref dirs i))
+                           (cond ((and (zerop was) (/= wind 0)) (setf start (aref xs i)))
+                                 ((and (/= was 0) (zerop wind)) (span start (aref xs i)))))))
+                     (loop for i of-type fixnum from 0 below (1- m) by 2
+                           do (span (aref xs i) (aref xs (1+ i))))))))))
 
 (defun px-fill-polygon (s gc coords &optional (rule (px-gc-fill-rule gc)))
   (px-fill-paths s gc (list (coerce coords 'simple-vector)) rule))
@@ -576,35 +680,40 @@ LSB first; 1s are drawn in the foreground, 0s in the background."
          (dx (+ dx (- x0 sx))) (dy (+ dy (- y0 sy)))
          (w (- x1 x0)) (h (- y1 y0)))
     (when (and (plusp w) (plusp h))
-      (let* ((spix (px-surface-pixels src))
-             ;; Copying within one surface: read from a copy, so overlapping
-             ;; rectangles come out right.
-             (copy (if (eq src dst)
-                       (let ((c (make-array (* w h) :element-type '(unsigned-byte 32))))
-                         (dotimes (r h c)
-                           (replace c spix :start1 (* r w)
-                                           :start2 (+ (* (+ y0 r) sw) x0)
-                                           :end2 (+ (* (+ y0 r) sw) x0 w))))
-                       nil))
-             (fn (px-gc-function gc))
+      (let* ((fn (px-gc-function gc))
              (mask (px-mask dst))
+             (spix (px-surface-pixels src))
              (dpix (px-surface-pixels dst))
              (dw (px-surface-width dst))
-             (from-bitmap (and (= (px-surface-depth src) 1) (/= (px-surface-depth dst) 1))))
-        (dotimes (r h)
-          (let ((row (+ dy r)))
-            (when (< -1 row (px-surface-height dst))
-              (dolist (iv (px-row-intervals dst (px-gc-clip gc) row))
-                (let ((a (max dx (car iv))) (b (min (+ dx w) (cdr iv))))
-                  (loop for x from a below b
-                        for v = (if copy
-                                    (aref copy (+ (* r w) (- x dx)))
-                                    (aref spix (+ (* (+ y0 r) sw) x0 (- x dx))))
-                        for src-pixel = (if from-bitmap
-                                            (if (zerop v) (px-gc-background gc) (px-gc-foreground gc))
-                                            v)
-                        for i = (+ (* row dw) x)
-                        do (setf (aref dpix i) (px-op fn src-pixel (aref dpix i) mask))))))))))))
+             (same (eq src dst))
+             (from-bitmap (and (= (px-surface-depth src) 1) (/= (px-surface-depth dst) 1)))
+             ;; A row of source pixels, when they cannot be read in place:
+             ;; a bitmap made foreground and background, or, within one
+             ;; surface, a row a non-copy function would overwrite before
+             ;; reading.
+             (row-buffer (when (or from-bitmap (and same (/= fn +px-gx-copy+)))
+                           (make-array w :element-type '(unsigned-byte 32)))))
+        ;; Within one surface, copying down must go bottom up.
+        (loop for r in (if (and same (> dy y0))
+                           (loop for r from (1- h) downto 0 collect r)
+                           (loop for r below h collect r))
+              for row = (+ dy r)
+              for srow = (+ (* (+ y0 r) sw) x0)
+              when (< -1 row (px-surface-height dst))
+                do (when row-buffer
+                     (if from-bitmap
+                         (let ((fg (px-gc-foreground gc)) (bg (px-gc-background gc)))
+                           (dotimes (i w)
+                             (setf (aref row-buffer i)
+                                   (if (zerop (aref spix (+ srow i))) bg fg))))
+                         (replace row-buffer spix :start2 srow :end2 (+ srow w))))
+                   (dolist (iv (px-row-intervals dst (px-gc-clip gc) row))
+                     (let ((a (max dx (car iv))) (b (min (+ dx w) (cdr iv))))
+                       (when (< a b)
+                         (if row-buffer
+                             (px-row-op dpix (+ (* row dw) a) row-buffer (- a dx) (- b a) fn mask)
+                             (px-row-op dpix (+ (* row dw) a) spix (+ srow (- a dx)) (- b a)
+                                        fn mask))))))))))
 
 ;;; Text
 
@@ -614,24 +723,13 @@ bytes apart, its top left at (X,Y), within CLIP."
   (declare (type fixnum x y w h stride) (type (unsigned-byte 32) colour)
            (type (simple-array (unsigned-byte 8) (*)) data))
   (let ((pixels (px-surface-pixels s))
-        (sw (px-surface-width s))
-        (fr (ldb (byte 8 16) colour))
-        (fgc (ldb (byte 8 8) colour))
-        (fb (ldb (byte 8 0) colour)))
-    (declare (type (simple-array (unsigned-byte 32) (*)) pixels) (type fixnum sw fr fgc fb))
+        (sw (px-surface-width s)))
     (loop for row from (max 0 (- y)) below h
           for py = (+ y row)
           while (< py (px-surface-height s))
           do (dolist (iv (px-row-intervals s clip py))
-               (loop for col from (max 0 (- (car iv) x)) below (min w (- (cdr iv) x))
-                     for a = (aref data (+ (* row stride) col))
-                     unless (zerop a)
-                       do (let ((i (+ (* py sw) x col)))
-                            (if (= a 255)
-                                (setf (aref pixels i) colour)
-                                (let* ((d (aref pixels i)) (na (- 255 a)))
-                                  (setf (aref pixels i)
-                                        (logior
-                                         (ash (floor (+ (* a fr) (* na (ldb (byte 8 16) d))) 255) 16)
-                                         (ash (floor (+ (* a fgc) (* na (ldb (byte 8 8) d))) 255) 8)
-                                         (floor (+ (* a fb) (* na (ldb (byte 8 0) d))) 255)))))))))))
+               (let ((c0 (max 0 (- (car iv) x)))
+                     (c1 (min w (- (cdr iv) x))))
+                 (when (< c0 c1)
+                   (px-row-blend pixels (+ (* py sw) x c0) data (+ (* row stride) c0)
+                                 (- c1 c0) colour)))))))
