@@ -498,9 +498,16 @@
 
 (asdf:defsystem :garnet/wl
   :description "Garnet with Wayland (Wayflan) backend (work-in-progress)"
-  :depends-on (:garnet/core :wayflan)
+  :depends-on (:garnet/core :wayflan-client :cl-xkb :cl-truetype :cffi)
   :license "MIT-ish (also public domain, see LICENSE)"
-  :author "Arthur Miller")
+  :author "Arthur Miller"
+  :components
+  ((:module gem-wl
+	    :pathname "src/gem"
+	    :serial t
+	    :components ((:file "wl-ffi")
+			 (:file "wl-raster")
+			 (:file "wl")))))
 
 ;;; Default entrypoint for backward compatibility
 (asdf:defsystem :garnet

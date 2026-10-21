@@ -71,6 +71,43 @@ Mostly functional, complete (c. 1990) gui toolkit
    Or one of the sub folders.  But I like rebuilding everything from
    time to time.
 
+** Wayland
+
+   The =garnet/wl= system runs Garnet natively on a Wayland
+   compositor, through [[https://git.sr.ht/~shunter/wayflan][Wayflan]], a Wayland client in Common Lisp:
+
+   #+BEGIN_SRC lisp
+     (ql:quickload :garnet/wl)
+     (demos-controller:do-go)
+   #+END_SRC
+
+   It needs =$WAYLAND_DISPLAY= set, a compositor with =xdg_wm_base=
+   (any desktop one), libxkbcommon (through =cl-xkb=), and
+   =cl-truetype=, the backend-neutral core of [[https://github.com/amno1/clxcb-truetype][clxcb-truetype]].  Use a
+   Wayflan newer than Quicklisp's 2026-01 release: older ones fail on
+   events that name no object.
+
+   A Wayland compositor draws nothing for its clients, so this backend
+   (=src/gem/wl*.lisp=) draws every window in Lisp memory, following
+   X11's rules for raster functions, stipples, clipping, wide lines and
+   arcs, and hands the compositor finished buffers.  Text is drawn
+   with cl-truetype.  Subwindows exist only in Garnet: they are drawn
+   into their top-level window, which is the Wayland surface.  Keys
+   are translated by the compositor's XKB keymap into X keysyms, so
+   Garnet's key bindings apply unchanged.
+
+   What differs from X11:
+
+   - A client cannot place its windows: the compositor does.  Garnet
+     keeps the positions it asks for as virtual screen coordinates, so
+     menus, which are Wayland popups, still open where Opal puts them
+     relative to their window.
+   - Text is drawn at =gem::*wl-dpi*=, 72 by default, so that Garnet's
+     font sizes are pixel sizes, as they were with X core fonts.
+   - The cut buffer is shared between Garnet's windows, not yet with
+     other clients; there is no bell, and the pointer is always an
+     arrow.
+
 ** CCL and CLX
 
    CCL is particular about which version of CLX it runs.  The easiest
