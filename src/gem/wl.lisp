@@ -901,10 +901,13 @@ pixels, drawn at *WL-SCALE*."
     s))
 
 (defun wl-rescale-surface (s k background)
-  "Give S, a window's surface or double buffer, scale K."
+  "Give S, a window's surface or double buffer, scale K, cleared to
+BACKGROUND: what was drawn at the old scale would show through where Opal
+does not draw again."
   (setf (px-surface-scale s) k)
   (px-resize-surface s (dev-size (px-surface-logical-width s) k)
-                     (dev-size (px-surface-logical-height s) k) background))
+                     (dev-size (px-surface-logical-height s) k) background)
+  (fill (px-surface-pixels s) background))
 
 (defun wl-create-window (parent-window x y width height title icon-name
                          background border-width save-under visible
@@ -2602,15 +2605,22 @@ threads; the main loop is woken through the pipe."
         (:client-message
          (destructuring-bind (win type data format) args
            (interactors::do-client-message win type data format *wl-display*)))
-        (:rescale
-         ;; Every window's pixels were made anew at the new scale: have
-         ;; Opal draw them all again.
-         (dolist (w (remove-duplicates
-                     (loop for d being the hash-keys of *wl-drawable-to-window-table*
-                             using (hash-value w)
-                           when (and (wl-window-p d) (schema-p w)) collect w)))
-           (opal:update w t))))
+        )
       t)))
+
+(defvar *wl-redraw-all* nil
+  "Set when every window must be drawn again: after a change of scale.  Not
+an event, which DISCARD-PENDING-EVENTS could throw away.")
+
+(defun wl-run-redraw-all ()
+  "If the scale changed, have Opal draw every window again, at the new one."
+  (when *wl-redraw-all*
+    (setf *wl-redraw-all* nil)
+    (dolist (w (remove-duplicates
+                (loop for d being the hash-keys of *wl-drawable-to-window-table*
+                        using (hash-value w)
+                      when (and (wl-window-p d) (schema-p w)) collect w)))
+      (opal:update w t))))
 
 (defun wl-set-scale (scale)
   "The compositor prefers SCALE for Garnet's windows: draw them, and their
@@ -2628,7 +2638,7 @@ double buffers, at it from now on."
                (wl-rescale-surface buffer scale #xFFFFFF))
              *wl-window-buffers*)
     (clrhash *wl-layout-cache*)
-    (wl-queue-event (list :rescale))))
+    (setf *wl-redraw-all* t)))
 
 (defun wl-event-handler (root-window ignore-keys)
   "Take one event for Garnet, waiting for it unless IGNORE-KEYS, and
@@ -2638,6 +2648,7 @@ dispatch it to the interactors."
     (return-from wl-event-handler nil))
   (setf *wl-thread* (bt:current-thread))
   (loop
+    (wl-run-redraw-all)
     (wl-present-all)
     (wl-read-events)
     (wl-run-repeat)
