@@ -283,7 +283,7 @@
 			    (save-value obj :left (g-value obj :left))
 			    (s-formula-value (get-value obj :left) :menu-item
 					     :lapidary-mode))
-		      (when (not (eq (g-formula-value (get-value obj :left)
+		      (when (not (eq (g-formula-value (get-value obj :top)
 						      :menu-item)
 				     :lapidary-mode))
 			    (save-value obj :top (g-value obj :top))
