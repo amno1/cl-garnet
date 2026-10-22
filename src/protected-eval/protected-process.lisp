@@ -33,20 +33,13 @@
   ;; first, throw away any pending events
   (discard-all-pending-events)
   (let ((root-window (gv gem:device-info :current-root)))
-    ;; (unwind-protect
-    ;; 	 (catch 'exit-main-loop-exception
-    ;; 	   (loop
-	      ;; RGA added an abort restart to the main event loop.
-;;	      (restart-case
-;;		  (gg:with-garnet-error-handling "Main Interaction Loop"
-		    (loop
-		       (inter::default-event-handler root-window))
-;;		    )
-		;; (abort () :report "Discard pending X events, restart loop"
-		;;        (discard-all-pending-events))
-;;		)
-;;	      ))
-      (setf *inside-main-event-loop* nil)))
+    ;; As PROTECTED-PROCESS-M-E-L, without its error handling and restart.
+    ;; The loop is left by throwing EXIT-MAIN-LOOP-EXCEPTION.
+    (unwind-protect
+         (catch 'exit-main-loop-exception
+           (loop
+             (inter::default-event-handler root-window)))
+      (setf *inside-main-event-loop* nil))))
 
 (when *main-event-loop-process*
   (kill-main-event-loop-process)
