@@ -352,10 +352,11 @@
     (opal:destroy ORANGE-LINE-1)
     (opal:destroy ORANGE-LINE-2)
 
+    ;; Not EXIT-MAIN-EVENT-LOOP: run from the demos controller, the loop is
+    ;; the controller's.  Run alone, destroying TOP-WIN, the last window,
+    ;; has already left it.
     (if (fboundp 'Common-Lisp-User::Garnet-Note-Quitted)
-	(Common-Lisp-User::Garnet-Note-Quitted "DEMO-UNISTROKES"))
-
-    #-cmu (inter:exit-main-event-loop))
+	(Common-Lisp-User::Garnet-Note-Quitted "DEMO-UNISTROKES")))
 
 
 ;; do-go creates the necessary windows and Garnet objects, and
