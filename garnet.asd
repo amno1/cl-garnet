@@ -234,7 +234,8 @@
 	     (:file "protected-eval")
 	     (:file "protected-process")
 	     (:file "abstract-errors")
-	     (:file "garnet-errors")))
+	     ;; Redefines functions of abstract-errors, so must come after it.
+	     (:file "garnet-errors" :depends-on ("abstract-errors"))))
    (:module gesture
    	    :pathname "src/gesture"
    	    :depends-on (utils gem kr opal ps gadgets protected-eval)
