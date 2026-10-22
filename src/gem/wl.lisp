@@ -1139,6 +1139,11 @@ rectangles, segments and quarter arcs."
 
 (defparameter *wl-truetype-initialized-p* nil)
 (defparameter *wl-font-cache-table* (make-hash-table :test 'equal))
+(defparameter *wl-layout-cache* (make-hash-table :test 'equal)
+  "(font . string) -> its glyph layout.  Opal draws the same strings again
+and again, and laying one out takes the font loader's lock and exact
+arithmetic on every glyph.")
+
 
 (defun ensure-wl-truetype-initialized ()
   (unless *wl-truetype-initialized-p*
@@ -1261,11 +1266,6 @@ rectangles, segments and quarter arcs."
          (ascent (truetype:font-ascent *wl-dpi* tt-font))
          (descent (abs (truetype:font-descent *wl-dpi* tt-font))))
     (values width ascent descent 0 width width)))
-
-(defparameter *wl-layout-cache* (make-hash-table :test 'equal)
-  "(font . string) -> its glyph layout.  Opal draws the same strings again
-and again, and laying one out takes the font loader's lock and exact
-arithmetic on every glyph.")
 
 (defun wl-layout (tt-font string)
   (let ((key (cons tt-font string)))
