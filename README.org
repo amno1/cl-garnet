@@ -81,6 +81,10 @@ Mostly functional, complete (c. 1990) gui toolkit
      (demos-controller:do-go)
    #+END_SRC
 
+   This backend is *very* experimental, and is still very buggy. I
+   am very new to Wayland programming, this is my first project, so
+   all help is appreciated (and needed).
+   
    It needs =$WAYLAND_DISPLAY= set, a compositor with =xdg_wm_base=
    (any desktop one), libxkbcommon (through =cl-xkb=), and
    =cl-truetype=, the backend-neutral core of [[https://github.com/amno1/clxcb-truetype][clxcb-truetype]].  Use a
@@ -134,6 +138,10 @@ Mostly functional, complete (c. 1990) gui toolkit
    After that you should be able to set up the Garnet repo for
    quicklisp in the same way as above.
 
+
+*** OBS: CCL not tested with XCB or WL backends!
+
+   May or may not work.
 
 ** Documentation
 
