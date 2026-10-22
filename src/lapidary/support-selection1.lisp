@@ -41,8 +41,7 @@
 ;;; =================================================================
 
 (defun get-feedback-obj (feedback-list feedback-type
-				       &optional filling-style
-				       &key (size 7))
+				       &key filling-style (size 7))
   (let ((feedback-obj (if (null feedback-list)
 			  (if (null filling-style)
 			      (create-instance nil feedback-type)
@@ -106,11 +105,11 @@
 	   ((is-a-p obj opal:aggregate)
 	    (multiple-value-setq (feedback-obj *agg-feedback-list*)
 	      (get-feedback-obj *agg-feedback-list* opal:circle 
-				filling-style :size *agg-sel-circle-size*)))
+				:filling-style filling-style :size *agg-sel-circle-size*)))
 	   (t 
 	    (multiple-value-setq (feedback-obj *leaf-feedback-list*)
 	        (get-feedback-obj *leaf-feedback-list* opal:rectangle
-		 	      filling-style))))
+		 	      :filling-style filling-style))))
 
       ;; ensure we have a valid feedback object. Invalid feedback objects
       ;; may be left around when windows are destroyed
