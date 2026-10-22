@@ -493,15 +493,21 @@ capped."
                  (push (px-circle-path x y hw) paths)
                  (add (- x hw) (- y hw) (+ x hw) (- y hw) (+ x hw) (+ y hw) (- x hw) (+ y hw)))))
           (t
-           (dotimes (i (1- n))
-             (multiple-value-bind (nx ny) (offset i (1+ i))
-               (let ((x0 (px i)) (y0 (py i)) (x1 (px (1+ i))) (y1 (py (1+ i))))
-                 (add (+ x0 nx) (+ y0 ny) (+ x1 nx) (+ y1 ny)
-                      (- x1 nx) (- y1 ny) (- x0 nx) (- y0 ny)))))
+           ;; The segments; when closed, also the one from the last
+           ;; point back to the first.
+           (dotimes (i (if (and closed (> n 2)) n (1- n)))
+             (let ((j (mod (1+ i) n)))
+               (multiple-value-bind (nx ny) (offset i j)
+                 (let ((x0 (px i)) (y0 (py i)) (x1 (px j)) (y1 (py j)))
+                   (add (+ x0 nx) (+ y0 ny) (+ x1 nx) (+ y1 ny)
+                        (- x1 nx) (- y1 ny) (- x0 nx) (- y0 ny))))))
            (loop for i from 1 below (1- n)
                  do (join (1- i) i (1+ i)))
            (if closed
-               (when (> n 2) (join (- n 2) 0 1))
+               (when (> n 2)
+                 ;; The joins at the last point and at the first.
+                 (join (- n 2) (1- n) 0)
+                 (join (1- n) 0 1))
                (progn (cap 0 1 t)
                       (cap (1- n) (- n 2) nil)))))))
     (mapcar #'px-orient paths)))
