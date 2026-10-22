@@ -575,7 +575,14 @@ staged."
   (initialize-xcb-device-values (get-full-display-name) *root-window*)
   (xcb-initialize-device-post)
   (s-value *root-window* :drawable (display-info-root-window *display-info*))
-  (s-value *root-window* :display-info *display-info*))
+  (s-value *root-window* :display-info *display-info*)
+  ;; Opal's fonts were made when Garnet's core was loaded, before there was
+  ;; a device, and their metrics computed by GEM's fallbacks.  Their
+  ;; formulas depend on :CURRENT-ROOT, which init set to the value it
+  ;; already had, so nothing was invalidated: change it, to have them
+  ;; computed again by this backend.
+  (s-value device-info :current-root nil)
+  (s-value device-info :current-root *root-window*))
 
 
 ;;; Window Lifecycle & Window Properties
@@ -660,8 +667,9 @@ staged."
                        :border-pixel *black*
                        :bit-gravity +gravity-north-west+
                        :backing-store +backing-store-always+
+                       ;; Opal passes :ON or :OFF, and :OFF is true too.
                        :override-redirect
-                       (if override-redirect 1 0)
+                       (if (eq override-redirect :on) 1 0)
                        :save-under (if save-under 1 0)
                        :event-mask *exposure-event-mask*)
 
