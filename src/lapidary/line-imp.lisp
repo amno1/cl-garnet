@@ -65,10 +65,9 @@ Change log:
 
 (defun careful-eval (string)
   (multiple-value-bind (val errorp)
-    #+cmu (ignore-errors (read-from-string string))
-    #+lcl3.0 (system::ignore-errors (read-from-string string))
-    #+allegro (excl::ignore-errors (read-from-string string))
-    #-(or cmu lcl3.0 allegro) (read-from-string string) ; don't know the handler
+    ;; On an error, IGNORE-ERRORS returns NIL and the condition, so ERRORP
+    ;; is a number only when the string was read.
+    (ignore-errors (read-from-string string))
     (if (numberp errorp) ; then no error
 	(progn
 	  (when (or (and (symbolp val)(boundp val)) ; if a symbol or list, eval it
