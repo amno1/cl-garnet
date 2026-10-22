@@ -52,6 +52,10 @@ threads.")
 (defvar *wl-seat* nil)
 (defvar *wl-pointer* nil)
 (defvar *wl-keyboard* nil)
+(defvar *wl-cursor-shape-manager* nil "wp_cursor_shape_manager_v1, if offered.")
+(defvar *wl-cursor-shape-device* nil)
+(defvar *wl-data-device-manager* nil "wl_data_device_manager, for the clipboard.")
+(defvar *wl-data-device* nil)
 
 (defvar *wl-root* nil
   "The WL-WINDOW standing for the screen: the parent of top-level windows.")
@@ -141,6 +145,7 @@ calls this only for the X device; the X backends define it too.)"
   (background #xFFFFFF)
   title
   (event-mask :default)
+  (cursor nil)                          ; from WL-CREATE-CURSOR; NIL: the parent's
   override-redirect
   min-width min-height max-width max-height
   ;; Wayland objects, for a top-level window while it is mapped.
@@ -630,13 +635,26 @@ made once and kept on its stipple schema."
                   (unless *wl-seat*
                     (setf *wl-seat* (wl-registry.bind registry name 'wl-seat
                                                       (min version 5)))
-                    (push 'wl-handle-seat (wl-proxy-hooks *wl-seat*))))))))
+                    (push 'wl-handle-seat (wl-proxy-hooks *wl-seat*))))
+                 (wl-data-device-manager
+                  (setf *wl-data-device-manager*
+                        (wl-registry.bind registry name 'wl-data-device-manager
+                                          (min version 3))))
+                 (garnet-wl-protocols:wp-cursor-shape-manager-v1
+                  (setf *wl-cursor-shape-manager*
+                        (wl-registry.bind registry name
+                                          'garnet-wl-protocols:wp-cursor-shape-manager-v1
+                                          1)))))))
           (wl-proxy-hooks registry))
     ;; One roundtrip for the globals, another for the seat's capabilities.
     (wl-display-roundtrip *wl-display*)
     (wl-display-roundtrip *wl-display*)
     (unless (and *wl-compositor* *wl-shm* *wl-wm-base*)
-      (error "The Wayland compositor lacks wl_compositor, wl_shm or xdg_wm_base."))))
+      (error "The Wayland compositor lacks wl_compositor, wl_shm or xdg_wm_base."))
+    (when (and *wl-data-device-manager* *wl-seat*)
+      (setf *wl-data-device*
+            (wl-data-device-manager.get-data-device *wl-data-device-manager* *wl-seat*))
+      (push 'wl-handle-data-device (wl-proxy-hooks *wl-data-device*)))))
 
 (defun wl-handle-seat (&rest event)
   (event-case event
@@ -644,8 +662,15 @@ made once and kept on its stipple schema."
      (if (member :pointer capabilities)
          (unless *wl-pointer*
            (setf *wl-pointer* (wl-seat.get-pointer *wl-seat*))
-           (push 'wl-handle-pointer (wl-proxy-hooks *wl-pointer*)))
+           (push 'wl-handle-pointer (wl-proxy-hooks *wl-pointer*))
+           (when *wl-cursor-shape-manager*
+             (setf *wl-cursor-shape-device*
+                   (garnet-wl-protocols:wp-cursor-shape-manager-v1.get-pointer
+                    *wl-cursor-shape-manager* *wl-pointer*))))
          (when *wl-pointer*
+           (when *wl-cursor-shape-device*
+             (ignore-errors (destroy-proxy *wl-cursor-shape-device*))
+             (setf *wl-cursor-shape-device* nil))
            (ignore-errors (destroy-proxy *wl-pointer*))
            (setf *wl-pointer* nil)))
      (if (member :keyboard capabilities)
@@ -858,6 +883,9 @@ made once and kept on its stipple schema."
            (xdg-toplevel.set-title (wl-window-xdg-toplevel drawable) (string value))))
         (:event-mask
          (setf (wl-window-event-mask drawable) value))
+        (:cursor
+         (setf (wl-window-cursor drawable) value)
+         (wl-update-cursor))
         (:buffer-gcontext
          (destructuring-bind (buffer foreground background) value
            (declare (ignore buffer))
@@ -1604,7 +1632,10 @@ ROOT-WINDOW is the window PIXMAP is the double buffer of."
 
 (defvar *wl-pointer-x* 0 "Pointer position in *WL-POINTER-WINDOW*.")
 (defvar *wl-pointer-y* 0)
-(defvar *wl-pointer-serial* 0)
+(defvar *wl-pointer-serial* 0 "The serial of the pointer's last enter.")
+(defvar *wl-current-cursor* nil "The cursor last set: a WL-CURSOR or a shape.")
+(defvar *wl-input-serial* 0
+  "The serial of the last input event, which setting the clipboard needs.")
 (defvar *wl-buttons-down* 0 "X button state bits of the buttons held down.")
 (defvar *wl-implicit-grab* nil
   "The window a button was pressed in, which gets the pointer's events
@@ -1709,13 +1740,15 @@ the pointer's position in it; NIL if none does."
   (event-case event
     (:enter (serial surface sx sy)
      (setf *wl-pointer-serial* serial
+           *wl-input-serial* serial
+           *wl-current-cursor* nil
            *wl-pointer-window* (and surface (gethash surface *wl-surface-to-window*))
            *wl-pointer-x* (floor sx) *wl-pointer-y* (floor sy))
      (when *wl-pointer-window*
        (unless (eq (wl-window-kind *wl-pointer-window*) :popup)
          (setf *wl-last-toplevel* *wl-pointer-window*)))
-     (wl-set-cursor serial)
-     (wl-update-crossing 0))
+     (wl-update-crossing 0)
+     (wl-update-cursor))
     (:leave (serial surface)
      (declare (ignore serial surface))
      (setf *wl-pointer-window* nil)
@@ -1723,11 +1756,12 @@ the pointer's position in it; NIL if none does."
     (:motion (time sx sy)
      (setf *wl-pointer-x* (floor sx) *wl-pointer-y* (floor sy))
      (wl-update-crossing time)
+     (wl-update-cursor)
      (multiple-value-bind (win x y) (wl-pointer-target :motion)
        (when win
          (wl-queue-event (list :motion-notify win x y time)))))
     (:button (serial time button state)
-     (setf *wl-pointer-serial* serial)
+     (setf *wl-input-serial* serial)
      (let* ((x-button (wl-evdev-button button))
             (pressp (eq state :pressed))
             (bit (if (<= 1 x-button 5) (ash +wl-button1-mask+ (1- x-button)) 0)))
@@ -1753,11 +1787,18 @@ the pointer's position in it; NIL if none does."
                   (wl-queue-button b nil time)
                   (decf *wl-axis-accumulator* (if (= b 4) -10 10))))))))
 
-;;; The pointer image: an arrow, drawn here, since Wayland has no cursor
-;;; font and a client sets its own cursor.
+;;; The pointer image.  Opal's cursors are bitmaps (its arrow, hourglass
+;;; and others), drawn here into cursor surfaces just as Opal made them,
+;;; or glyphs of X's cursor font, which have no Wayland counterpart: those
+;;; are asked of the compositor by name, through cursor-shape-v1, as the
+;;; nearest shape of its cursor theme.  Without cursor-shape-v1, they are
+;;; shown as Garnet's arrow.
 
-(defvar *wl-cursor-surface* nil)
-(defvar *wl-cursor-buffer* nil)
+(defstruct wl-cursor
+  (width 0) (height 0)
+  pixels                                ; ARGB, a (WIDTH * HEIGHT) vector
+  (x-hot 0) (y-hot 0)
+  surface buffer)                       ; made when first shown
 
 (defparameter *wl-arrow-cursor*
   '("X"
@@ -1776,34 +1817,94 @@ the pointer's position in it; NIL if none does."
     "XX  X..X"
     "X    X..X"
     "     X..X"
-    "      XX"))
+    "      XX")
+  "The cursor for windows with none, and for cursor font glyphs when the
+compositor cannot show them by name.")
 
-(defun wl-set-cursor (serial)
+(defvar *wl-default-cursor*
+  (let* ((w 16) (h (length *wl-arrow-cursor*))
+         (pixels (make-array (* w h) :element-type '(unsigned-byte 32) :initial-element 0)))
+    (loop for row in *wl-arrow-cursor*
+          for y from 0
+          do (loop for c across row
+                   for x from 0
+                   do (setf (aref pixels (+ (* y w) x))
+                            (case c (#\X #xFF000000) (#\. #xFFFFFFFF) (t 0)))))
+    (make-wl-cursor :width w :height h :pixels pixels)))
+
+;;; X cursor font glyph -> cursor-shape-v1 shape (X11's cursorfont.h).
+(defparameter *wl-cursor-font-shapes*
+  '((0 . :not-allowed) (2 . :default) (12 . :sw-resize) (14 . :se-resize)
+    (16 . :s-resize) (26 . :wait) (30 . :crosshair) (34 . :crosshair)
+    (42 . :ew-resize) (52 . :move) (58 . :pointer) (60 . :pointer)
+    (68 . :default) (70 . :w-resize) (86 . :crosshair) (88 . :not-allowed)
+    (90 . :crosshair) (92 . :help) (94 . :default) (96 . :e-resize)
+    (108 . :ew-resize) (116 . :ns-resize) (120 . :all-scroll) (128 . :crosshair)
+    (130 . :crosshair) (132 . :default) (134 . :nw-resize) (136 . :ne-resize)
+    (138 . :n-resize) (150 . :wait) (152 . :text)))
+
+(defun wl-cursor-from-bitmaps (source mask foreground background x-hot y-hot)
+  "A WL-CURSOR from the depth-1 PX-SURFACEs SOURCE and MASK: where the mask
+is set, the source's 1s in FOREGROUND and 0s in BACKGROUND, as X makes a
+cursor from pixmaps.  Without a mask, all of it is shown."
+  (let* ((w (px-surface-width source)) (h (px-surface-height source))
+         (pixels (make-array (* w h) :element-type '(unsigned-byte 32) :initial-element 0)))
+    (dotimes (y h)
+      (dotimes (x w)
+        (let ((on (/= 0 (aref (px-surface-pixels source) (+ (* y w) x))))
+              (shown (or (null mask)
+                         (and (< x (px-surface-width mask)) (< y (px-surface-height mask))
+                              (/= 0 (aref (px-surface-pixels mask)
+                                          (+ (* y (px-surface-width mask)) x)))))))
+          (when shown
+            (setf (aref pixels (+ (* y w) x))
+                  (logior #xFF000000 (if on foreground background)))))))
+    (make-wl-cursor :width w :height h :pixels pixels :x-hot x-hot :y-hot y-hot)))
+
+(defun wl-show-cursor-surface (cursor)
+  "CURSOR's wl_surface, made and filled the first time it is shown."
+  (or (wl-cursor-surface cursor)
+      (let* ((w (wl-cursor-width cursor)) (h (wl-cursor-height cursor))
+             (size (* 4 w h)))
+        (multiple-value-bind (fd ptr) (wl-make-shm size)
+          (cffi:with-pointer-to-vector-data (p (wl-cursor-pixels cursor))
+            (%wl-memcpy ptr p size))
+          (let* ((pool (wl-shm.create-pool *wl-shm* fd size))
+                 (buffer (wl-shm-pool.create-buffer pool 0 w h (* 4 w) :argb8888))
+                 (surface (wl-compositor.create-surface *wl-compositor*)))
+            (destroy-proxy pool)
+            ;; The compositor has its own mapping of the memory now.
+            (%wl-munmap ptr size)
+            (%wl-close fd)
+            (wl-surface.attach surface buffer 0 0)
+            (wl-surface.damage-buffer surface 0 0 w h)
+            (wl-surface.commit surface)
+            (setf (wl-cursor-buffer cursor) buffer
+                  (wl-cursor-surface cursor) surface))))))
+
+(defun wl-window-cursor-under-pointer ()
+  "The cursor of the deepest window under the pointer, or of its nearest
+ancestor that has one."
+  (when *wl-pointer-window*
+    (loop for w = (wl-deepest-window *wl-pointer-window* *wl-pointer-x* *wl-pointer-y*)
+            then (wl-window-parent w)
+          while (and w (not (eq (wl-window-kind w) :root)))
+          when (wl-window-cursor w) do (return (wl-window-cursor w)))))
+
+(defun wl-update-cursor ()
+  "Show the cursor for where the pointer is, if it is not shown already."
   (when *wl-pointer*
-    (unless *wl-cursor-surface*
-      (let ((w 16) (h (length *wl-arrow-cursor*)))
-        (setf *wl-cursor-buffer* (wl-make-buffer w h)
-              *wl-cursor-surface* (wl-compositor.create-surface *wl-compositor*))
-        (let ((ptr (wl-shm-buffer-pointer *wl-cursor-buffer*)))
-          (loop for row in *wl-arrow-cursor*
-                for y from 0
-                do (dotimes (x w)
-                     (setf (cffi:mem-aref ptr :uint32 (+ (* y w) x))
-                           (case (and (< x (length row)) (char row x))
-                             (#\X #xFF000000)
-                             (#\. #xFFFFFFFF)
-                             (t 0))))))
-        ;; XRGB has no alpha: make the buffer ARGB by recreating it.
-        (destroy-proxy (wl-shm-buffer-proxy *wl-cursor-buffer*))
-        (let ((pool (wl-shm.create-pool *wl-shm* (wl-shm-buffer-fd *wl-cursor-buffer*)
-                                        (wl-shm-buffer-size *wl-cursor-buffer*))))
-          (setf (wl-shm-buffer-proxy *wl-cursor-buffer*)
-                (wl-shm-pool.create-buffer pool 0 w h (* 4 w) :argb8888))
-          (destroy-proxy pool))
-        (wl-surface.attach *wl-cursor-surface* (wl-shm-buffer-proxy *wl-cursor-buffer*) 0 0)
-        (wl-surface.damage-buffer *wl-cursor-surface* 0 0 w h)
-        (wl-surface.commit *wl-cursor-surface*)))
-    (wl-pointer.set-cursor *wl-pointer* serial *wl-cursor-surface* 0 0)))
+    (let ((cursor (or (wl-window-cursor-under-pointer) *wl-default-cursor*)))
+      (when (and (keywordp cursor) (null *wl-cursor-shape-device*))
+        (setf cursor *wl-default-cursor*))
+      (unless (eq cursor *wl-current-cursor*)
+        (setf *wl-current-cursor* cursor)
+        (if (keywordp cursor)
+            (garnet-wl-protocols:wp-cursor-shape-device-v1.set-shape
+             *wl-cursor-shape-device* *wl-pointer-serial* cursor)
+            (wl-pointer.set-cursor *wl-pointer* *wl-pointer-serial*
+                                   (wl-show-cursor-surface cursor)
+                                   (wl-cursor-x-hot cursor) (wl-cursor-y-hot cursor)))))))
 
 
 ;;; Input: keyboard
@@ -1860,7 +1961,8 @@ in the focused window, else the focused window."
          (wl-load-keymap fd size)
          (%wl-close fd)))
     (:enter (serial surface keys)
-     (declare (ignore serial keys))
+     (declare (ignore keys))
+     (setf *wl-input-serial* serial)
      (setf *wl-focus-window* (and surface (gethash surface *wl-surface-to-window*))))
     (:leave (serial surface)
      (declare (ignore serial surface))
@@ -1871,7 +1973,7 @@ in the focused window, else the focused window."
      (unless (wl-null-pointer-p *wl-xkb-state*)
        (xkb:xkb-state-update-mask *wl-xkb-state* depressed latched locked 0 0 group)))
     (:key (serial time key state)
-     (declare (ignore serial))
+     (setf *wl-input-serial* serial)
      (let ((keycode (+ key 8)))
        (if (eq state :pressed)
            (progn
@@ -1957,9 +2059,24 @@ in the focused window, else the focused window."
         (inter::base-char-to-character temp-char bits))))
 
 (defun wl-create-cursor (root-window source mask foreground background from-font-p x y)
-  "Wayland has no cursor font, and this backend shows one arrow for all."
-  (declare (ignore root-window source mask foreground background from-font-p x y))
-  :arrow)
+  "A cursor for :CURSOR: with FROM-FONT-P, X is a glyph of X's cursor font,
+returned as the nearest cursor-shape-v1 shape; otherwise SOURCE and MASK
+are depth-1 pixmaps and (X, Y) the hot spot, made into a WL-CURSOR."
+  (declare (ignore root-window))
+  (flet ((pixel (color default)
+           (cond ((and (consp color) (= (length color) 3))
+                  ;; 16-bit red, green and blue.
+                  (logior (ash (ash (first color) -8) 16) (ash (ash (second color) -8) 8)
+                          (ash (third color) -8)))
+                 ((and color (schema-p color)) (wl-color-to-pixel color default))
+                 (t default))))
+    (if from-font-p
+        (or (cdr (assoc x *wl-cursor-font-shapes*)) :default)
+        (if (px-surface-p source)
+            (wl-cursor-from-bitmaps source (and (px-surface-p mask) mask)
+                                    (pixel foreground 0) (pixel background #xFFFFFF)
+                                    (or x 0) (or y 0))
+            *wl-default-cursor*))))
 
 (defun wl-create-state-mask (root-window modifier)
   (if (listp modifier)
@@ -1972,18 +2089,110 @@ in the focused window, else the focused window."
         (:button-4 2048) (:button-5 4096)
         (t (if (numberp modifier) modifier 0)))))
 
-;;; The cut buffer is kept in this Lisp: it is shared between Garnet's
-;;; windows, not with other Wayland clients.
+;;; The cut buffer is the Wayland clipboard (the selection), through
+;;; wl_data_device: Garnet's cut text can be pasted in other programs, and
+;;; theirs in Garnet.  *WL-CUT-BUFFER* keeps Garnet's own, for when there
+;;; is no data device, and to be read back without asking the compositor.
+
 (defvar *wl-cut-buffer* "")
+(defvar *wl-selection-source* nil "Our wl_data_source, while it is the selection.")
+(defvar *wl-selection-offer* nil "The selection another client offers, if any.")
+(defvar *wl-offer-types* (make-hash-table :test 'eq)
+  "wl_data_offer -> the MIME types it offers.")
+
+(defparameter *wl-text-types*
+  '("text/plain;charset=utf-8" "UTF8_STRING" "text/plain" "TEXT" "STRING"))
+
+(defun wl-forget-offer (offer)
+  (when offer
+    (remhash offer *wl-offer-types*)
+    (unless (typep offer 'wl-destroyed-proxy)
+      (destroy-proxy offer))))
+
+(defun wl-handle-data-device (&rest event)
+  (event-case event
+    (:data-offer (offer)
+     (setf (gethash offer *wl-offer-types*) '())
+     (push (evlambda
+             (:offer (mime-type)
+              (push mime-type (gethash offer *wl-offer-types*))))
+           (wl-proxy-hooks offer)))
+    (:selection (offer)
+     (unless (eq offer *wl-selection-offer*)
+       (wl-forget-offer *wl-selection-offer*))
+     (setf *wl-selection-offer* offer))
+    ;; Drag and drop is not supported: let its offers go.
+    (:enter (serial surface x y offer)
+     (declare (ignore serial surface x y))
+     (unless (eq offer *wl-selection-offer*) (wl-forget-offer offer)))))
+
+(defun wl-write-fully (fd octets)
+  (cffi:with-pointer-to-vector-data (p octets)
+    (let ((done 0) (n (length octets)))
+      (loop while (< done n)
+            do (let ((w (%wl-write fd (cffi:inc-pointer p done) (- n done))))
+                 (if (plusp w) (incf done w) (return)))))))
 
 (defun wl-get-cut-buffer (root-window)
   (declare (ignore root-window))
-  *wl-cut-buffer*)
+  (let* ((offer *wl-selection-offer*)
+         (type (and offer (not *wl-selection-source*)
+                    (find-if (lambda (type) (member type (gethash offer *wl-offer-types*)
+                                                    :test #'string=))
+                             *wl-text-types*))))
+    (or (and type (wl-receive-offer offer type))
+        *wl-cut-buffer*)))
+
+(defun wl-receive-offer (offer type)
+  "The text OFFER gives as TYPE, read through a pipe, waiting a second at
+most for the other client; NIL if it gives none."
+  (cffi:with-foreign-object (fds :int 2)
+    (when (zerop (%wl-pipe fds))
+      (let ((r (cffi:mem-aref fds :int 0)) (w (cffi:mem-aref fds :int 1))
+            (octets (make-array 0 :element-type '(unsigned-byte 8)
+                                  :adjustable t :fill-pointer 0)))
+        (unwind-protect
+             (progn
+               (wl-data-offer.receive offer type w)
+               ;; The request has gone, with its copy of the descriptor.
+               (%wl-close w)
+               (setf w nil)
+               (cffi:with-foreign-object (buf :uint8 4096)
+                 (loop while (wl-poll-fds (list r) 1000)
+                       do (let ((n (%wl-read r buf 4096)))
+                            (if (plusp n)
+                                (dotimes (i n)
+                                  (vector-push-extend (cffi:mem-aref buf :uint8 i) octets))
+                                (return)))))
+               (and (plusp (length octets))
+                    (babel:octets-to-string (coerce octets '(simple-array (unsigned-byte 8) (*)))
+                                            :encoding :utf-8 :errorp nil)))
+          (when w (%wl-close w))
+          (%wl-close r))))))
 
 (defun wl-set-cut-buffer (root-window string)
   (declare (ignore root-window))
   (when (stringp string)
-    (setf *wl-cut-buffer* (copy-seq string)))
+    (setf *wl-cut-buffer* (copy-seq string))
+    (when *wl-data-device*
+      (let ((source (wl-data-device-manager.create-data-source *wl-data-device-manager*))
+            (octets (babel:string-to-octets string :encoding :utf-8)))
+        (dolist (type *wl-text-types*)
+          (wl-data-source.offer source type))
+        (push (evlambda
+                (:send (mime-type fd)
+                 (declare (ignore mime-type))
+                 (unwind-protect (wl-write-fully fd octets)
+                   (%wl-close fd)))
+                (:cancelled ()
+                 (when (eq *wl-selection-source* source)
+                   (setf *wl-selection-source* nil))
+                 (destroy-proxy source)))
+              (wl-proxy-hooks source))
+        (wl-data-device.set-selection *wl-data-device* source *wl-input-serial*)
+        (let ((old *wl-selection-source*))
+          (setf *wl-selection-source* source)
+          (when old (destroy-proxy old))))))
   nil)
 
 (defun wl-socket-fd ()

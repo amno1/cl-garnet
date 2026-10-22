@@ -498,7 +498,7 @@
 
 (asdf:defsystem :garnet/wl
   :description "Garnet with Wayland (Wayflan) backend (work-in-progress)"
-  :depends-on (:garnet/core :wayflan-client :cl-xkb :cl-truetype :cffi)
+  :depends-on (:garnet/core :wayflan-client :cl-xkb :cl-truetype :cffi :babel)
   :license "MIT-ish (also public domain, see LICENSE)"
   :author "Arthur Miller"
   :components
@@ -508,6 +508,8 @@
 	    :components ((:file "wl-ffi")
 			 (:file "wl-raster")
 			 (:file "wl-raster-simd")
+			 (:static-file "protocols/cursor-shape-v1.xml")
+			 (:file "wl-protocols")
 			 (:file "wl")))))
 
 ;;; Default entrypoint for backward compatibility
