@@ -498,7 +498,7 @@
 
 (asdf:defsystem :garnet/wl
   :description "Garnet with Wayland (Wayflan) backend (work-in-progress)"
-  :depends-on (:garnet/core :wayflan-client :cl-xkb :cl-truetype :cffi :babel)
+  :depends-on (:garnet/core :wayflan-client :cl-xkb :cl-truetype :cffi :babel :trivial-garbage)
   :license "MIT-ish (also public domain, see LICENSE)"
   :author "Arthur Miller"
   :components
@@ -509,6 +509,7 @@
 			 (:file "wl-raster")
 			 (:file "wl-raster-simd")
 			 (:static-file "protocols/cursor-shape-v1.xml")
+			 (:static-file "protocols/fractional-scale-v1.xml")
 			 (:file "wl-protocols")
 			 (:file "wl")))))
 

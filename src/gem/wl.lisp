@@ -56,6 +56,13 @@ threads.")
 (defvar *wl-cursor-shape-device* nil)
 (defvar *wl-data-device-manager* nil "wl_data_device_manager, for the clipboard.")
 (defvar *wl-data-device* nil)
+(defvar *wl-viewporter* nil "wp_viewporter, to show buffers at logical size.")
+(defvar *wl-fractional-scale-manager* nil "wp_fractional_scale_manager_v1.")
+
+(defvar *wl-scale* 1
+  "Device pixels per logical pixel, as the compositor prefers for Garnet's
+windows: 1.25 on a display scaled to 125%.  Windows and their double
+buffers are drawn at this scale; Opal works in logical pixels.")
 
 (defvar *wl-root* nil
   "The WL-WINDOW standing for the screen: the parent of top-level windows.")
@@ -150,6 +157,8 @@ calls this only for the X device; the X backends define it too.)"
   min-width min-height max-width max-height
   ;; Wayland objects, for a top-level window while it is mapped.
   wl-surface xdg-surface xdg-toplevel xdg-popup
+  viewport fractional-scale
+  (viewport-size nil)                   ; the destination last set
   (configured nil)
   ;; The wl_callback of the last commit's frame request, until the
   ;; compositor says it is time to draw the next frame.
@@ -191,17 +200,66 @@ calls this only for the X device; the X backends define it too.)"
             (max (third a) (third b)) (max (fourth a) (fourth b)))
       b))
 
+;;; Logical to device pixels.  A logical edge X becomes device edge
+;;; (ROUND (* X K)), so areas that tile still tile; a logical pixel's
+;;; centre, where X puts a vertex, becomes the centre of its device
+;;; pixels, (X + 1/2) K - 1/2.
+
+(declaim (inline dev-edge dev-centre))
+(defun dev-edge (v k) (round (* v k)))
+(defun dev-centre (v k) (- (* (+ v 1/2) k) 1/2))
+(defun dev-centre-i (v k) (round (dev-centre v k)))
+
+(defun dev-size (n k) (max 1 (round (* n k))))
+
+(defun dev-rect (x y w h k)
+  "The device rectangle (X Y W H) of the logical one."
+  (let ((x0 (dev-edge x k)) (y0 (dev-edge y k)))
+    (values x0 y0 (- (dev-edge (+ x w) k) x0) (- (dev-edge (+ y h) k) y0))))
+
+(defun dev-line-width (lw k)
+  "LW logical pixels wide, at scale K.  A line covers the device pixels of
+the logical pixels it runs through, as fills do: X's zero-width lines are
+one logical pixel wide, K device pixels -- 1 or 2 by turns at 1.25 -- so
+that lines side by side tile, with no gaps between them nor overlaps."
+  (if (= k 1)
+      lw
+      (* (max 1 lw) k)))
+
+(defun wl-gc-device (gc k)
+  "Make GC's clip, line width and dashes those of the logical ones at
+scale K, for drawing on a surface of that scale."
+  (setf (px-gc-line-width gc) (dev-line-width (px-gc-logical-line-width gc) k))
+  (when (member (px-gc-line-style gc) '(:dash :double-dash))
+    (setf (px-gc-dashes gc) (mapcar (lambda (d) (max 1 (round (* d k))))
+                                    (px-gc-logical-dashes gc))))
+  (let ((logical (px-gc-logical-clip gc)))
+    (setf (px-gc-clip gc)
+          (if (or (eq logical :none) (= k 1))
+              logical
+              (if (and (eq (px-gc-clip-scale gc) k) (not (eq (px-gc-clip gc) logical)))
+                  (px-gc-clip gc)
+                  (loop for (x y w h) in logical
+                        collect (multiple-value-list (dev-rect x y w h k))))))
+    (setf (px-gc-clip-scale gc) k))
+  gc)
+
+(defun wl-scale-of (drawable)
+  (px-surface-scale (wl-target drawable)))
+
 (defvar *wl-dirty-windows* '()
   "Top-level windows with damage not yet presented.")
 
 (defun wl-damage (win x y w h)
-  "Note that the rectangle (X Y W H) of WIN has changed."
+  "Note that the logical rectangle (X Y W H) of WIN has changed.  Damage
+is kept in the device pixels of the top-level window's buffer."
   (when (and (plusp w) (plusp h))
     (multiple-value-bind (top ox oy) (wl-top-level win)
       (unless (eq (wl-window-kind top) :root)
-        (let ((x0 (max 0 (+ x ox))) (y0 (max 0 (+ y oy)))
-              (x1 (min (wl-window-width top) (+ x ox w)))
-              (y1 (min (wl-window-height top) (+ y oy h))))
+        (let* ((k (px-surface-scale (wl-window-pixels top)))
+               (x0 (max 0 (dev-edge (+ x ox) k))) (y0 (max 0 (dev-edge (+ y oy) k)))
+               (x1 (min (px-surface-width (wl-window-pixels top)) (dev-edge (+ x ox w) k)))
+               (y1 (min (px-surface-height (wl-window-pixels top)) (dev-edge (+ y oy h) k))))
           (when (and (< x0 x1) (< y0 y1))
             (setf (wl-window-damage top)
                   (rect-union (wl-window-damage top) (list x0 y0 x1 y1)))
@@ -265,18 +323,21 @@ pixels offset by (SX, SY), into the XRGB8888 buffer at DST-PTR."
                              (cffi:inc-pointer p (* 4 (+ (* (- y sy) sw) (- ax sx))))
                              (* 4 (- bx ax))))))))
 
-(defun wl-composite (win ox oy buffer x0 y0 x1 y1)
-  "Composite WIN, at (OX, OY) in BUFFER, and its mapped subwindows, within
-[X0,X1)x[Y0,Y1)."
-  (let ((cx0 (max x0 ox)) (cy0 (max y0 oy))
-        (cx1 (min x1 (+ ox (wl-window-width win))))
-        (cy1 (min y1 (+ oy (wl-window-height win)))))
+(defun wl-composite (win lx ly buffer x0 y0 x1 y1)
+  "Composite WIN, at logical (LX, LY) in BUFFER, and its mapped subwindows,
+within the device rectangle [X0,X1)x[Y0,Y1)."
+  (let* ((pixels (wl-window-pixels win))
+         (k (px-surface-scale pixels))
+         (ox (dev-edge lx k)) (oy (dev-edge ly k))
+         (cx0 (max x0 ox)) (cy0 (max y0 oy))
+         (cx1 (min x1 (+ ox (px-surface-width pixels))))
+         (cy1 (min y1 (+ oy (px-surface-height pixels)))))
     (when (and (< cx0 cx1) (< cy0 cy1))
-      (wl-copy-rows (wl-window-pixels win) ox oy (wl-shm-buffer-pointer buffer)
+      (wl-copy-rows pixels ox oy (wl-shm-buffer-pointer buffer)
                     (wl-shm-buffer-width buffer) cx0 cy0 cx1 cy1)
       (dolist (child (wl-window-children win))
         (when (wl-window-mapped child)
-          (wl-composite child (+ ox (wl-window-x child)) (+ oy (wl-window-y child))
+          (wl-composite child (+ lx (wl-window-x child)) (+ ly (wl-window-y child))
                         buffer cx0 cy0 cx1 cy1))))))
 
 (defun wl-request-frame (top surface)
@@ -302,7 +363,8 @@ committed is still waiting for the compositor."
         (surface (wl-window-wl-surface top)))
     (when (and damage surface (wl-window-configured top) (wl-window-mapped top)
                (null (wl-window-frame-callback top)))
-      (let ((w (wl-window-width top)) (h (wl-window-height top)))
+      (let ((w (px-surface-width (wl-window-pixels top)))
+            (h (px-surface-height (wl-window-pixels top))))
         ;; Buffers of another size are of no more use.
         (setf (wl-window-buffers top)
               (remove-if (lambda (b)
@@ -327,6 +389,13 @@ committed is still waiting for the compositor."
             (destructuring-bind (x0 y0 x1 y1) damage
               (wl-surface.attach surface (wl-shm-buffer-proxy buffer) 0 0)
               (wl-surface.damage-buffer surface x0 y0 (- x1 x0) (- y1 y0))
+              ;; The buffer is in device pixels; the surface is the
+              ;; window's logical size.
+              (let ((viewport (wl-window-viewport top))
+                    (size (cons (wl-window-width top) (wl-window-height top))))
+                (when (and viewport (not (equal size (wl-window-viewport-size top))))
+                  (wayflan-client.viewporter:wp-viewport.set-destination viewport (car size) (cdr size))
+                  (setf (wl-window-viewport-size top) size)))
               (wl-request-frame top surface)
               (wl-surface.commit surface))
             t))))))
@@ -391,6 +460,19 @@ committed is still waiting for the compositor."
           (wl-window-xdg-surface win) xdg-surface
           (wl-window-configured win) nil
           (gethash surface *wl-surface-to-window*) win)
+    ;; Draw at the scale the compositor prefers for the surface, shown at
+    ;; its logical size: both need both protocols.
+    (when (and *wl-viewporter* *wl-fractional-scale-manager*)
+      (let ((fractional (garnet-wl-protocols:wp-fractional-scale-manager-v1.get-fractional-scale
+                         *wl-fractional-scale-manager* surface)))
+        (setf (wl-window-viewport win) (wayflan-client.viewporter:wp-viewporter.get-viewport
+                                                *wl-viewporter* surface)
+              (wl-window-viewport-size win) nil
+              (wl-window-fractional-scale win) fractional)
+        (push (evlambda
+                (:preferred-scale (scale)
+                 (wl-set-scale (/ scale 120))))
+              (wl-proxy-hooks fractional))))
     (let ((parent (and (eq (wl-window-kind win) :popup) (wl-popup-parent))))
       (if parent
           (let ((positioner (xdg-wm-base.create-positioner *wl-wm-base*)))
@@ -462,11 +544,15 @@ next time at another place over another window."
       (setf surface nil))
     (when surface
       (remhash surface *wl-surface-to-window*)
-      (dolist (slot '(wl-window-xdg-popup wl-window-xdg-toplevel
+      (dolist (slot '(wl-window-viewport wl-window-fractional-scale
+                      wl-window-xdg-popup wl-window-xdg-toplevel
                       wl-window-xdg-surface wl-window-wl-surface))
         (let ((proxy (funcall slot win)))
           (when proxy (ignore-errors (destroy-proxy proxy)))))
-      (setf (wl-window-xdg-popup win) nil
+      (setf (wl-window-viewport win) nil
+            (wl-window-fractional-scale win) nil
+            (wl-window-viewport-size win) nil
+            (wl-window-xdg-popup win) nil
             (wl-window-xdg-toplevel win) nil
             (wl-window-xdg-surface win) nil
             (wl-window-wl-surface win) nil
@@ -502,7 +588,11 @@ next time at another place over another window."
       ;; The area it leaves shows its parent again.
       (wl-damage (wl-window-parent win) (wl-window-x win) (wl-window-y win)
                  (wl-window-width win) (wl-window-height win)))
-    (px-resize-surface (wl-window-pixels win) w h (wl-window-background win))
+    (let ((pixels (wl-window-pixels win)))
+      (px-resize-surface pixels (dev-size w (px-surface-scale pixels))
+                         (dev-size h (px-surface-scale pixels)) (wl-window-background win))
+      (setf (px-surface-logical-width pixels) w
+            (px-surface-logical-height pixels) h))
     (setf (wl-window-width win) w
           (wl-window-height win) h)
     (wl-damage-all win)))
@@ -537,7 +627,30 @@ function keyword."
 
 (defun wl-get-stipple (style-schema root-window)
   "The depth-1 PX-SURFACE for the stipple of the Opal style STYLE-SCHEMA,
-made once and kept on its stipple schema."
+made once and kept on its stipple schema, enlarged for drawing at
+*WL-SCALE* when that is 1.5 or more."
+  (let ((stipple (wl-get-stipple-1 style-schema root-window))
+        (factor (round *wl-scale*)))
+    (if (or (null stipple) (<= factor 1))
+        stipple
+        (let* ((stipple-schema (g-value style-schema :stipple))
+               (key (list :wl factor)))
+          (or (getf (g-value stipple-schema :root-pixmap-plist) key)
+              (let ((big (px-enlarge-surface stipple factor)))
+                (s-value stipple-schema :root-pixmap-plist
+                         (list* key big (g-value stipple-schema :root-pixmap-plist)))
+                big))))))
+
+(defun px-enlarge-surface (s factor)
+  "A copy of S, each pixel FACTOR by FACTOR pixels."
+  (let* ((w (px-surface-width s)) (h (px-surface-height s))
+         (big (make-px-surface (* w factor) (* h factor) :depth (px-surface-depth s))))
+    (dotimes (y (* h factor) big)
+      (dotimes (x (* w factor))
+        (setf (aref (px-surface-pixels big) (+ (* y w factor) x))
+              (aref (px-surface-pixels s) (+ (* (floor y factor) w) (floor x factor))))))))
+
+(defun wl-get-stipple-1 (style-schema root-window)
   (declare (ignore root-window))
   (let ((stipple-schema (and style-schema (schema-p style-schema)
                              (g-value style-schema :stipple))))
@@ -564,12 +677,13 @@ made once and kept on its stipple schema."
                                                      #xFFFFFF))
       (unless (eq line-style (px-gc-opal-style gc))
         (setf (px-gc-opal-style gc) line-style
-              (px-gc-line-width gc) (or (g-value line-style :line-thickness) 0)
+              (px-gc-logical-line-width gc) (or (g-value line-style :line-thickness) 0)
               (px-gc-line-style gc) (wl-line-style-val (g-value line-style :line-style))
               (px-gc-cap-style gc) (or (g-value line-style :cap-style) :butt)
               (px-gc-join-style gc) (or (g-value line-style :join-style) :miter)
-              (px-gc-dashes gc) (let ((d (g-value line-style :dash-pattern)))
-                                  (if (and (consp d) (every #'plusp d)) d '(4 4)))))
+              (px-gc-logical-dashes gc) (let ((d (g-value line-style :dash-pattern)))
+                                          (if (and (consp d) (every #'plusp d)) d '(4 4)))
+              (px-gc-dashes gc) (px-gc-logical-dashes gc)))
       ;; As in the CLX backend, a line style with a stipple is drawn
       ;; opaque-stippled.
       (let ((stipple (wl-get-stipple line-style root-window)))
@@ -640,6 +754,13 @@ made once and kept on its stipple schema."
                   (setf *wl-data-device-manager*
                         (wl-registry.bind registry name 'wl-data-device-manager
                                           (min version 3))))
+                 (wayflan-client.viewporter:wp-viewporter
+                  (setf *wl-viewporter*
+                        (wl-registry.bind registry name 'wayflan-client.viewporter:wp-viewporter 1)))
+                 (garnet-wl-protocols:wp-fractional-scale-manager-v1
+                  (setf *wl-fractional-scale-manager*
+                        (wl-registry.bind registry name
+                                          'garnet-wl-protocols:wp-fractional-scale-manager-v1 1)))
                  (garnet-wl-protocols:wp-cursor-shape-manager-v1
                   (setf *wl-cursor-shape-manager*
                         (wl-registry.bind registry name
@@ -741,7 +862,16 @@ made once and kept on its stipple schema."
 
 ;;; Window Lifecycle & Window Properties
 
+(defvar *wl-window-buffers* (trivial-garbage:make-weak-hash-table :weakness :key :test 'eq)
+  "The double buffers of windows, drawn at *WL-SCALE* like the windows.")
+
 (defun wl-set-drawable-to-window (window drawable)
+  ;; Opal says so of a window's drawable, and of its double buffer, which
+  ;; is then drawn at the window's scale too.
+  (when (px-surface-p drawable)
+    (setf (gethash drawable *wl-window-buffers*) t)
+    (unless (= (px-surface-scale drawable) *wl-scale*)
+      (wl-rescale-surface drawable *wl-scale* #xFFFFFF)))
   (setf (gethash drawable *wl-drawable-to-window-table*) window))
 
 (defun wl-drawable-to-window (root-window drawable)
@@ -759,6 +889,22 @@ made once and kept on its stipple schema."
 (defun wl-check-wm-delete-window (root-window type data format)
   (declare (ignore root-window data format))
   (eq type :wm-delete-window))
+
+(defun wl-make-window-surface (width height background)
+  "A surface for a window, or its double buffer, WIDTH by HEIGHT logical
+pixels, drawn at *WL-SCALE*."
+  (let ((s (make-px-surface (dev-size width *wl-scale*) (dev-size height *wl-scale*)
+                            :initial background)))
+    (setf (px-surface-scale s) *wl-scale*
+          (px-surface-logical-width s) (max 1 width)
+          (px-surface-logical-height s) (max 1 height))
+    s))
+
+(defun wl-rescale-surface (s k background)
+  "Give S, a window's surface or double buffer, scale K."
+  (setf (px-surface-scale s) k)
+  (px-resize-surface s (dev-size (px-surface-logical-width s) k)
+                     (dev-size (px-surface-logical-height s) k) background))
 
 (defun wl-create-window (parent-window x y width height title icon-name
                          background border-width save-under visible
@@ -779,7 +925,7 @@ made once and kept on its stipple schema."
                :x (or x 0) :y (or y 0)
                :width (max 1 (or width 1)) :height (max 1 (or height 1))
                :background bg
-               :pixels (make-px-surface (or width 1) (or height 1) :initial bg)
+               :pixels (wl-make-window-surface (or width 1) (or height 1) bg)
                :title (and title (string title))
                :override-redirect (eq override-redirect :on)
                :min-width min-width :min-height min-height
@@ -943,8 +1089,8 @@ the window's own."
   "Whether the window's buffer is smaller than WIDTH by HEIGHT."
   (let ((buffer (g-value window :buffer)))
     (and (px-surface-p buffer)
-         (or (> width (px-surface-width buffer))
-             (> height (px-surface-height buffer))))))
+         (or (> width (px-surface-logical-width buffer))
+             (> height (px-surface-logical-height buffer))))))
 
 (defun wl-device-batch-changes (root-window drawable function)
   (declare (ignore root-window drawable))
@@ -999,6 +1145,9 @@ the window's own."
 
 
 ;;; Shape Rendering & Drawing Primitives
+;;;
+;;; Opal's coordinates are logical; each primitive is mapped to the device
+;;; pixels of the surface drawn on, at its scale K (see DEV-EDGE).
 
 (defun wl-clear-area (window &optional (x 0) (y 0) width height clear-buffer-p)
   "Clear an area of WINDOW to its background.  If CLEAR-BUFFER-P, clear its
@@ -1008,7 +1157,8 @@ double buffer instead: the whole buffer when X is NIL."
             (buffer-gc (g-value window :buffer-gcontext)))
         (when (and (px-surface-p buffer) buffer-gc)
           (if x
-              (px-clear-rectangle buffer x y width height (px-gc-background buffer-gc))
+              (multiple-value-bind (dx dy dw dh) (dev-rect x y width height (px-surface-scale buffer))
+                (px-clear-rectangle buffer dx dy dw dh (px-gc-background buffer-gc)))
               (px-clear-rectangle buffer 0 0 (px-surface-width buffer)
                                   (px-surface-height buffer) (px-gc-background buffer-gc)))))
       (let ((drawable (g-value window :drawable)))
@@ -1016,27 +1166,35 @@ double buffer instead: the whole buffer when X is NIL."
           (let ((x (or x 0)) (y (or y 0))
                 (w (or width (wl-window-width drawable)))
                 (h (or height (wl-window-height drawable))))
-            (px-clear-rectangle (wl-window-pixels drawable) x y w h
-                                (wl-window-background drawable))
+            (multiple-value-bind (dx dy dw dh) (dev-rect x y w h (wl-scale-of drawable))
+              (px-clear-rectangle (wl-window-pixels drawable) dx dy dw dh
+                                  (wl-window-background drawable)))
             (wl-damage drawable x y w h))))))
 
 (defun wl-draw-rectangle (window left top width height function line-style fill-style)
   (let* ((width (max 1 width)) (height (max 1 height))
          (drawable (the-drawable window))
          (s (wl-target drawable))
+         (k (px-surface-scale s))
          (thickness (if line-style (max (or (g-value line-style :line-thickness) 0) 1) 0)))
     (when fill-style
-      (let ((gc (wl-fill-gc window)))
+      (let ((gc (wl-gc-device (wl-fill-gc window) k)))
         (set-wl-filling-style gc fill-style nil function)
-        (px-fill-rectangle s gc (+ left thickness) (+ top thickness)
-                           (max 0 (- width (* 2 thickness)))
-                           (max 0 (- height (* 2 thickness))))))
+        (multiple-value-bind (dx dy dw dh)
+            (dev-rect (+ left thickness) (+ top thickness)
+                      (max 0 (- width (* 2 thickness))) (max 0 (- height (* 2 thickness))) k)
+          (px-fill-rectangle s gc dx dy dw dh))))
     (when line-style
       (let ((gc (wl-line-gc window))
             (half (truncate thickness 2)))
         (set-wl-line-style gc line-style nil function)
-        (px-rectangle-outline s gc (+ left half) (+ top half)
-                              (max 0 (- width thickness)) (max 0 (- height thickness)))))
+        (wl-gc-device gc k)
+        ;; The outline runs through the centres of its corner pixels.
+        (let ((x0 (dev-vertex (+ left half) k))
+              (y0 (dev-vertex (+ top half) k))
+              (x1 (dev-vertex (+ left half (max 0 (- width thickness))) k))
+              (y1 (dev-vertex (+ top half (max 0 (- height thickness))) k)))
+          (px-rectangle-outline s gc x0 y0 (- x1 x0) (- y1 y0)))))
     (wl-note-drawn drawable (1- left) (1- top) (+ width 2) (+ height 2))))
 
 (defun wl-points-bbox-damage (drawable points line-width)
@@ -1047,44 +1205,67 @@ double buffer instead: the whole buffer when X is NIL."
       (wl-note-drawn drawable (- x0 pad) (- y0 pad)
                      (+ (- x1 x0) pad pad 1) (+ (- y1 y0) pad pad 1)))))
 
-(defun wl-draw-line (window x1 y1 x2 y2 function line-style &optional drawable)
-  (let* ((drawable (or drawable (the-drawable window))))
-    (when line-style
-      (let ((gc (wl-line-gc window)))
-        (set-wl-line-style gc line-style nil function)
-        (px-segment (wl-target drawable) gc x1 y1 x2 y2)
-        (wl-points-bbox-damage drawable (list (cons x1 y1) (cons x2 y2))
-                               (px-gc-line-width gc))))))
-
 (defun wl-points-from-list (point-list)
   "Flat coordinates (X0 Y0 X1 Y1 ...) as a list of (X . Y)."
   (loop for (x y) on point-list by #'cddr
         when (and x y) collect (cons (round x) (round y))))
 
+(defun dev-points (points k)
+  "Logical points (X . Y) as device points, at their pixels' centres:
+integers at scale 1, for X's thin lines, else exact."
+  (if (= k 1)
+      points
+      (loop for (x . y) in points collect (cons (dev-centre x k) (dev-centre y k)))))
+
+(defun dev-vertex (v k)
+  (if (= k 1) v (dev-centre v k)))
+
+(defun wl-draw-line (window x1 y1 x2 y2 function line-style &optional drawable)
+  (let* ((drawable (or drawable (the-drawable window)))
+         (k (wl-scale-of drawable)))
+    (when line-style
+      (let ((gc (wl-line-gc window)))
+        (set-wl-line-style gc line-style nil function)
+        (wl-gc-device gc k)
+        (px-segment (wl-target drawable) gc
+                    (dev-vertex x1 k) (dev-vertex y1 k)
+                    (dev-vertex x2 k) (dev-vertex y2 k))
+        (wl-points-bbox-damage drawable (list (cons x1 y1) (cons x2 y2))
+                               (px-gc-logical-line-width gc))))))
+
 (defun wl-draw-lines (window point-list function line-style fill-style)
   (let* ((drawable (the-drawable window))
          (s (wl-target drawable))
+         (k (px-surface-scale s))
          (points (wl-points-from-list point-list)))
     (when points
       (when fill-style
-        (let ((gc (wl-fill-gc window)))
+        (let ((gc (wl-gc-device (wl-fill-gc window) k)))
           (set-wl-filling-style gc fill-style nil function)
-          (px-fill-polygon s gc (loop for (x . y) in points collect x collect y))))
+          (px-fill-polygon s gc (loop for (x . y) in points
+                                      collect (dev-centre x k) collect (dev-centre y k)))))
       (when line-style
         (let ((gc (wl-line-gc window)))
           (set-wl-line-style gc line-style nil function)
-          (px-polyline s gc points)))
+          (wl-gc-device gc k)
+          (px-polyline s gc (dev-points points k))))
       (wl-points-bbox-damage drawable points
                              (and line-style (g-value line-style :line-thickness))))))
 
 (defun wl-draw-points (window point-list function line-style)
   (let* ((drawable (the-drawable window))
+         (s (wl-target drawable))
+         (k (px-surface-scale s))
          (points (wl-points-from-list point-list)))
     (when (and line-style points)
       (let ((gc (wl-line-gc window)))
         (set-wl-line-style gc line-style nil function)
+        (wl-gc-device gc k)
         (loop for (x . y) in points
-              do (px-point (wl-target drawable) gc x y))
+              do (if (= k 1)
+                     (px-point s gc x y)
+                     (multiple-value-bind (dx dy dw dh) (dev-rect x y 1 1 k)
+                       (px-fill-rectangle s gc dx dy dw dh))))
         (wl-points-bbox-damage drawable points 0)))))
 
 (defun wl-draw-arc (window x y width height angle1 angle2 function
@@ -1092,20 +1273,27 @@ double buffer instead: the whole buffer when X is NIL."
   (declare (ignore pie-slice-p))
   (let* ((drawable (the-drawable window))
          (s (wl-target drawable))
+         (k (px-surface-scale s))
          (thickness (if line-style (max 1 (or (g-value line-style :line-thickness) 0)) 0)))
-    (when fill-style
-      (let ((gc (wl-fill-gc window)))
-        (set-wl-filling-style gc fill-style nil function)
-        (px-arc-fill s gc (+ x thickness) (+ y thickness)
-                     (max 0 (- width (* 2 thickness))) (max 0 (- height (* 2 thickness)))
-                     angle1 angle2)))
-    (when line-style
-      (let ((gc (wl-line-gc window))
-            (half (truncate thickness 2)))
-        (set-wl-line-style gc line-style nil function)
-        (px-arc-outline s gc (+ x half) (+ y half)
-                        (max 0 (- width thickness)) (max 0 (- height thickness))
-                        angle1 angle2)))
+    (flet ((arc-box (bx by bw bh)
+             ;; X's arc box runs between pixel centres.
+             (values (dev-centre bx k) (dev-centre by k) (* bw k) (* bh k))))
+      (when fill-style
+        (let ((gc (wl-gc-device (wl-fill-gc window) k)))
+          (set-wl-filling-style gc fill-style nil function)
+          (multiple-value-bind (ax ay aw ah)
+              (arc-box (+ x thickness) (+ y thickness)
+                       (max 0 (- width (* 2 thickness))) (max 0 (- height (* 2 thickness))))
+            (px-arc-fill s gc ax ay aw ah angle1 angle2))))
+      (when line-style
+        (let ((gc (wl-line-gc window))
+              (half (truncate thickness 2)))
+          (set-wl-line-style gc line-style nil function)
+          (wl-gc-device gc k)
+          (multiple-value-bind (ax ay aw ah)
+              (arc-box (+ x half) (+ y half)
+                       (max 0 (- width thickness)) (max 0 (- height thickness)))
+            (px-arc-outline s gc ax ay aw ah angle1 angle2)))))
     (wl-note-drawn drawable (- x thickness 1) (- y thickness 1)
                    (+ width thickness thickness 2) (+ height thickness thickness 2))))
 
@@ -1115,6 +1303,7 @@ double buffer instead: the whole buffer when X is NIL."
 rectangles, segments and quarter arcs."
   (let* ((drawable (the-drawable window))
          (s (wl-target drawable))
+         (k (px-surface-scale s))
          (th (if line-style (max 1 (or (g-value line-style :line-thickness) 0)) 0))
          (th/2 (floor th 2))
          (th\2 (ceiling th 2))
@@ -1122,7 +1311,7 @@ rectangles, segments and quarter arcs."
          (c-h (+ y-radius y-radius))
          (quarter (/ pi 2)))
     (when fill-style
-      (let ((gc (wl-fill-gc window)))
+      (let ((gc (wl-gc-device (wl-fill-gc window) k)))
         (set-wl-filling-style gc fill-style nil function)
         ;; One path, filled by the winding rule, so overlapping pieces are
         ;; not painted twice.
@@ -1133,8 +1322,8 @@ rectangles, segments and quarter arcs."
           (flet ((corner (cx cy from)
                    (loop for i from 0 to 8
                          for a = (+ from (* quarter (/ i 8)))
-                         do (push (+ cx (* rx (cos a))) coords)
-                            (push (- cy (* ry (sin a))) coords))))
+                         do (push (dev-centre (+ cx (* rx (cos a))) k) coords)
+                            (push (dev-centre (- cy (* ry (sin a))) k) coords))))
             (corner (- x1 rx) (+ y0 ry) 0)
             (corner (+ x0 rx) (+ y0 ry) quarter)
             (corner (+ x0 rx) (- y1 ry) pi)
@@ -1153,17 +1342,24 @@ rectangles, segments and quarter arcs."
             (c-w-line (max 0 (- c-w th)))
             (c-h-line (max 0 (- c-h th))))
         (set-wl-line-style gc line-style nil function)
-        (px-segment s gc left-w y right y)
-        (px-segment s gc left-w y1 right y1)
-        (px-segment s gc l up l down)
-        (px-segment s gc l1 up l1 down)
-        (let ((arc-left (+ left th\2 (if (< th 2) -1 0)))
-              (arc-right (+ left width (- c-w-line) (- th\2) (if (< th 2) 0 -1)))
-              (arc-bottom (+ top height (- c-h-line) (- th\2) (if (<= th 3) 0 -1))))
-          (px-arc-outline s gc arc-right (+ top th/2) c-w-line c-h-line 0 quarter)
-          (px-arc-outline s gc arc-left (+ top th/2) c-w-line c-h-line quarter quarter)
-          (px-arc-outline s gc arc-left arc-bottom c-w-line c-h-line pi quarter)
-          (px-arc-outline s gc arc-right arc-bottom c-w-line c-h-line (* 3 quarter) quarter))))
+        (wl-gc-device gc k)
+        (flet ((seg (xa ya xb yb)
+                 (px-segment s gc (dev-vertex xa k) (dev-vertex ya k)
+                             (dev-vertex xb k) (dev-vertex yb k)))
+               (arc (ax ay a1)
+                 (px-arc-outline s gc (dev-centre ax k) (dev-centre ay k)
+                                 (* c-w-line k) (* c-h-line k) a1 quarter)))
+          (seg left-w y right y)
+          (seg left-w y1 right y1)
+          (seg l up l down)
+          (seg l1 up l1 down)
+          (let ((arc-left (+ left th\2 (if (< th 2) -1 0)))
+                (arc-right (+ left width (- c-w-line) (- th\2) (if (< th 2) 0 -1)))
+                (arc-bottom (+ top height (- c-h-line) (- th\2) (if (<= th 3) 0 -1))))
+            (arc arc-right (+ top th/2) 0)
+            (arc arc-left (+ top th/2) quarter)
+            (arc arc-left arc-bottom pi)
+            (arc arc-right arc-bottom (* 3 quarter))))))
     (wl-note-drawn drawable (- left th 1) (- top th 1) (+ width th th 2) (+ height th th 2))))
 
 (defun wl-set-clip-mask (window clip-mask &optional lstyle-ogc fstyle-ogc)
@@ -1173,19 +1369,42 @@ rectangles, segments and quarter arcs."
                   ;; in place.
                   (loop for (x y w h) on clip-mask by #'cddddr
                         collect (list x y (max 1 w) (max 1 h))))))
-    (setf (px-gc-clip (or lstyle-ogc (wl-line-gc window))) clip
-          (px-gc-clip (or fstyle-ogc (wl-fill-gc window))) clip)))
+    (dolist (gc (list (or lstyle-ogc (wl-line-gc window)) (or fstyle-ogc (wl-fill-gc window))))
+      (setf (px-gc-logical-clip gc) clip
+            (px-gc-clip gc) clip
+            (px-gc-clip-scale gc) 1))))
 
 (defun wl-bit-blit (window source s-x s-y width height destination d-x d-y)
   (when (and source destination)
-    (let ((gc (or (g-value window :buffer-gcontext) (wl-line-gc window))))
+    (let* ((gc (or (g-value window :buffer-gcontext) (wl-line-gc window)))
+           (src (wl-target source)) (dst (wl-target destination))
+           (ks (px-surface-scale src)) (kd (px-surface-scale dst)))
+      (wl-gc-device gc kd)
       (let ((fn (px-gc-function gc)))
         (when (eq gc (wl-line-gc window)) (setf (px-gc-function gc) +px-gx-copy+))
         (unwind-protect
-             (px-copy-area (wl-target source) (wl-target destination) gc
-                           s-x s-y width height d-x d-y)
+             (if (= ks kd)
+                 (multiple-value-bind (sx sy sw sh) (dev-rect s-x s-y width height ks)
+                   (multiple-value-bind (dx dy) (dev-rect d-x d-y width height kd)
+                     (px-copy-area src dst gc sx sy sw sh dx dy)))
+                 ;; A pixmap of another scale: resample it.
+                 (multiple-value-bind (dx dy dw dh) (dev-rect d-x d-y width height kd)
+                   (px-copy-area (px-resample src (dev-edge s-x ks) (dev-edge s-y ks)
+                                              (dev-size width ks) (dev-size height ks) dw dh)
+                                 dst gc 0 0 dw dh dx dy)))
           (setf (px-gc-function gc) fn)))
       (wl-note-drawn destination d-x d-y width height))))
+
+(defun px-resample (s x y w h dw dh)
+  "The W by H area of S at (X, Y), resampled to DW by DH, nearest pixel."
+  (let ((out (make-px-surface dw dh :depth (px-surface-depth s)))
+        (sw (px-surface-width s)) (sh (px-surface-height s)))
+    (dotimes (r dh out)
+      (dotimes (c dw)
+        (let ((sx (+ x (floor (* c w) dw))) (sy (+ y (floor (* r h) dh))))
+          (when (and (< -1 sx sw) (< -1 sy sh))
+            (setf (aref (px-surface-pixels out) (+ (* r dw) c))
+                  (aref (px-surface-pixels s) (+ (* sy sw) sx)))))))))
 
 
 ;;; Fonts and Text, with cl-truetype
@@ -1320,18 +1539,18 @@ arithmetic on every glyph.")
          (descent (abs (truetype:font-descent *wl-dpi* tt-font))))
     (values width ascent descent 0 width width)))
 
-(defun wl-layout (tt-font string)
-  (let ((key (cons tt-font string)))
+(defun wl-layout (tt-font string &optional (dpi *wl-dpi*))
+  (let ((key (list* dpi tt-font string)))
     (or (gethash key *wl-layout-cache*)
         (progn
           (when (> (hash-table-count *wl-layout-cache*) 4000)
             (clrhash *wl-layout-cache*))
-          (setf (gethash (cons tt-font (copy-seq string)) *wl-layout-cache*)
+          (setf (gethash (list* dpi tt-font (copy-seq string)) *wl-layout-cache*)
                 (map 'vector (lambda (entry)
                                (destructuring-bind (index pen image) entry
                                  (declare (ignore index))
                                  (cons (round pen) image)))
-                     (truetype:layout-glyphs tt-font string *wl-dpi* *wl-dpi*)))))))
+                     (truetype:layout-glyphs tt-font string dpi dpi)))))))
 
 (defun wl-draw-text (window x y string font function line-style
                      &optional fill-background invert-p)
@@ -1349,24 +1568,30 @@ arithmetic on every glyph.")
                            (wl-color-to-pixel (g-value line-style :background-color) #xFFFFFF)
                            #xFFFFFF))
              (fg (if invert-p style-bg style-fg))
+             (k (px-surface-scale s))
+             (dpi (* *wl-dpi* k))
+             ;; Opal measured the text in logical pixels; it is drawn at
+             ;; the surface's scale, from the device baseline.
              (ascent (truetype:font-ascent *wl-dpi* tt-font))
              (descent (abs (truetype:font-descent *wl-dpi* tt-font)))
              (width (truetype:text-line-width *wl-dpi* tt-font str))
-             (clip (px-gc-clip gc)))
+             (dx (dev-edge x k)) (dy (dev-edge y k))
+             (clip (px-gc-clip (wl-gc-device gc k))))
         (when fill-background
-          (px-clear-rectangle-clipped s clip x (- y ascent) (max 1 width) (max 1 (+ ascent descent))
-                                      (if invert-p style-fg style-bg)))
-        (loop for (pen . image) across (wl-layout tt-font str)
+          (multiple-value-bind (bx by bw bh)
+              (dev-rect x (- y ascent) (max 1 width) (max 1 (+ ascent descent)) k)
+            (px-clear-rectangle-clipped s clip bx by bw bh (if invert-p style-fg style-bg))))
+        (loop for (pen . image) across (wl-layout tt-font str dpi)
               when (plusp (truetype:glyph-image-width image))
                 do (px-blend-alpha s clip
-                                   (- (+ x pen) (truetype:glyph-image-x image))
-                                   (- y (truetype:glyph-image-y image))
+                                   (- (+ dx pen) (truetype:glyph-image-x image))
+                                   (- dy (truetype:glyph-image-y image))
                                    (truetype:glyph-image-width image)
                                    (truetype:glyph-image-height image)
                                    (truetype:glyph-image-data image)
                                    (truetype:glyph-image-stride image)
                                    fg))
-        (loop for (bx by bw bh) in (truetype:font-decorations tt-font str x y *wl-dpi* *wl-dpi* t)
+        (loop for (bx by bw bh) in (truetype:font-decorations tt-font str dx dy dpi dpi t)
               do (px-clear-rectangle-clipped s clip bx by bw bh fg))
         (wl-note-drawn drawable (- x 2) (- y ascent 2) (+ width 4) (+ ascent descent 4))))))
 
@@ -1531,17 +1756,62 @@ ROOT-WINDOW is the window PIXMAP is the double buffer of."
        (make-wl-image :width 16 :height h :depth 1 :bits-per-pixel 1
                       :bytes-per-line 2 :data arr)))))
 
+(defvar *wl-scaled-images* (trivial-garbage:make-weak-hash-table :weakness :key :test 'eq)
+  "Image -> (DW DH . the image enlarged to DW by DH), for drawing at a scale.")
+
+(defun wl-image-at-size (image w h dw dh)
+  "IMAGE, W by H, enlarged to DW by DH, nearest pixel, kept for next time."
+  (let ((cached (gethash image *wl-scaled-images*)))
+    (if (and cached (= (first cached) dw) (= (second cached) dh))
+        (cddr cached)
+        (let* ((data (wl-image-data image))
+               (scaled
+                 (if (= (wl-image-depth image) 1)
+                     (let* ((bpl (ceiling dw 8))
+                            (out (make-array (* bpl dh) :element-type '(unsigned-byte 8)
+                                                        :initial-element 0)))
+                       (dotimes (r dh)
+                         (dotimes (c dw)
+                           (let ((i (+ (* (floor (* r h) dh) (wl-image-bytes-per-line image))
+                                       (floor (floor (* c w) dw) 8))))
+                             (when (and (< i (array-total-size data))
+                                        (logbitp (mod (floor (* c w) dw) 8)
+                                                 (row-major-aref data i)))
+                               (setf (ldb (byte 1 (mod c 8)) (aref out (+ (* r bpl) (floor c 8))))
+                                     1)))))
+                       (make-wl-image :width dw :height dh :depth 1 :bits-per-pixel 1
+                                      :bytes-per-line bpl :data out))
+                     (let ((out (make-array (list dh dw) :element-type '(unsigned-byte 32))))
+                       (dotimes (r dh)
+                         (dotimes (c dw)
+                           (setf (aref out r c)
+                                 (or (aref data (min (1- (array-dimension data 0)) (floor (* r h) dh))
+                                           (min (1- (array-dimension data 1)) (floor (* c w) dw)))
+                                     0))))
+                       (make-wl-image :width dw :height dh :depth (wl-image-depth image)
+                                      :bits-per-pixel 32 :bytes-per-line (* 4 dw) :data out)))))
+          (setf (gethash image *wl-scaled-images*) (list* dw dh scaled))
+          scaled))))
+
 (defun wl-draw-image (window left top width height image function fill-style)
   (let* ((drawable (the-drawable window))
          (s (wl-target drawable))
+         (k (px-surface-scale s))
          (data (if (wl-image-p image) (wl-image-data image) image)))
     (when (and drawable fill-style (arrayp data))
-      (let ((gc (wl-fill-gc window)))
+      (let ((gc (wl-gc-device (wl-fill-gc window) k)))
         (set-wl-filling-style gc fill-style nil function)
-        (if (and (wl-image-p image) (= (wl-image-depth image) 1))
-            (px-put-bitmap s gc left top width height data (wl-image-bytes-per-line image))
-            (when (= (array-rank data) 2)
-              (px-put-pixels s gc left top data)))
+        (multiple-value-bind (dx dy dw dh) (dev-rect left top width height k)
+          (let ((image (if (and (/= k 1) (wl-image-p image)
+                                (or (= (wl-image-depth image) 1) (= (array-rank data) 2)))
+                           (wl-image-at-size image width height dw dh)
+                           image)))
+            (if (and (wl-image-p image) (= (wl-image-depth image) 1))
+                (px-put-bitmap s gc dx dy (wl-image-width image) (wl-image-height image)
+                               (wl-image-data image) (wl-image-bytes-per-line image))
+                (let ((data (if (wl-image-p image) (wl-image-data image) image)))
+                  (when (= (array-rank data) 2)
+                    (px-put-pixels s gc dx dy data))))))
         (wl-note-drawn drawable left top width height)))))
 
 (defun wl-window-to-image (window left top width height)
@@ -1552,9 +1822,11 @@ ROOT-WINDOW is the window PIXMAP is the double buffer of."
              (h (max 1 (round (or height (g-value window :height) 1))))
              (x (round (or left 0))) (y (round (or top 0)))
              (arr (make-array (list h w) :element-type '(unsigned-byte 32) :initial-element 0)))
+        ;; One device pixel for each logical one, at its centre.
         (dotimes (r h)
           (dotimes (c w)
-            (let ((sx (+ x c)) (sy (+ y r)))
+            (let ((sx (dev-centre-i (+ x c) (px-surface-scale s)))
+                  (sy (dev-centre-i (+ y r) (px-surface-scale s))))
               (when (and (< -1 sx (px-surface-width s)) (< -1 sy (px-surface-height s)))
                 (setf (aref arr r c)
                       (aref (px-surface-pixels s) (+ (* sy (px-surface-width s)) sx)))))))
@@ -2329,8 +2601,34 @@ threads; the main loop is woken through the pipe."
          (interactors::do-unmap-notify (funcall window-of (first args))))
         (:client-message
          (destructuring-bind (win type data format) args
-           (interactors::do-client-message win type data format *wl-display*))))
+           (interactors::do-client-message win type data format *wl-display*)))
+        (:rescale
+         ;; Every window's pixels were made anew at the new scale: have
+         ;; Opal draw them all again.
+         (dolist (w (remove-duplicates
+                     (loop for d being the hash-keys of *wl-drawable-to-window-table*
+                             using (hash-value w)
+                           when (and (wl-window-p d) (schema-p w)) collect w)))
+           (opal:update w t))))
       t)))
+
+(defun wl-set-scale (scale)
+  "The compositor prefers SCALE for Garnet's windows: draw them, and their
+double buffers, at it from now on."
+  (unless (= scale *wl-scale*)
+    (setf *wl-scale* scale)
+    (maphash (lambda (d w)
+               (declare (ignore w))
+               (when (and (wl-window-p d) (not (eq (wl-window-kind d) :root)))
+                 (wl-rescale-surface (wl-window-pixels d) scale (wl-window-background d))
+                 (wl-damage-all d)))
+             *wl-drawable-to-window-table*)
+    (maphash (lambda (buffer v)
+               (declare (ignore v))
+               (wl-rescale-surface buffer scale #xFFFFFF))
+             *wl-window-buffers*)
+    (clrhash *wl-layout-cache*)
+    (wl-queue-event (list :rescale))))
 
 (defun wl-event-handler (root-window ignore-keys)
   "Take one event for Garnet, waiting for it unless IGNORE-KEYS, and

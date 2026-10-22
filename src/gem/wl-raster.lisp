@@ -22,12 +22,19 @@
   (width 0 :type fixnum)
   (height 0 :type fixnum)
   (depth 24 :type fixnum)
+  ;; Device pixels per logical pixel, and the size in logical pixels: a
+  ;; window's surface, or its double buffer, is drawn at the display's
+  ;; scale, while Opal works in logical pixels.  Other pixmaps are 1.
+  (scale 1 :type real)
+  (logical-width 0 :type fixnum)
+  (logical-height 0 :type fixnum)
   (pixels (make-array 0 :element-type '(unsigned-byte 32))
    :type (simple-array (unsigned-byte 32) (*))))
 
 (defun make-px-surface (width height &key (depth 24) (initial 0))
   (let ((w (max 1 width)) (h (max 1 height)))
     (%make-px-surface :width w :height h :depth depth
+                      :logical-width w :logical-height h
                       :pixels (make-array (* w h) :element-type '(unsigned-byte 32)
                                                   :initial-element initial))))
 
@@ -54,7 +61,7 @@ is new with BACKGROUND."
   (function 3 :type fixnum)             ; GXcopy
   (foreground 0 :type (unsigned-byte 32))
   (background #xFFFFFF :type (unsigned-byte 32))
-  (line-width 0 :type fixnum)
+  (line-width 0 :type real)        ; device pixels, maybe fractional
   (line-style :solid)                   ; :solid :dash :double-dash
   (cap-style :butt)                     ; :not-last :butt :round :projecting
   (join-style :miter)                   ; :miter :round :bevel
@@ -63,7 +70,14 @@ is new with BACKGROUND."
   (fill-rule :even-odd)                 ; :even-odd :winding
   (stipple nil)                         ; a PX-SURFACE or NIL
   (clip :none)                          ; :NONE or a list of (X Y W H)
-  (opal-style nil))                     ; the Opal style last set, for caching
+  (opal-style nil)                      ; the Opal style last set, for caching
+  ;; The clip, line width and dashes as Opal gave them, in logical pixels;
+  ;; the slots above hold them in the device pixels of the surface last
+  ;; drawn on, made from these.
+  (logical-clip :none)
+  (clip-scale 1)
+  (logical-line-width 0)
+  (logical-dashes '(4 4)))
 
 (defconstant +px-gx-copy+ 3)
 (defconstant +px-gx-noop+ 5)

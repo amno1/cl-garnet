@@ -104,6 +104,10 @@ Mostly functional, complete (c. 1990) gui toolkit
      relative to their window.
    - Text is drawn at =gem::*wl-dpi*=, 72 by default, so that Garnet's
      font sizes are pixel sizes, as they were with X core fonts.
+   - On a scaled display, windows are drawn at the scale the
+     compositor prefers, fractional ones too (1.25, 1.5), through the
+     fractional-scale-v1 and viewporter protocols, so text and lines
+     are sharp; Garnet itself works in logical pixels as before.
    - The cut buffer is the Wayland clipboard.  Cursors made from
      bitmaps look as on X; X cursor-font glyphs are shown as the
      nearest shape of the desktop's cursor theme, through the

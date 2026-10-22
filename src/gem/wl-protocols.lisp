@@ -14,3 +14,10 @@
 (wl-include
  (asdf:system-relative-pathname :garnet "src/gem/protocols/cursor-shape-v1.xml")
  :export t)
+
+;;; The scale the compositor would like a surface drawn at, which may be
+;;; fractional; the buffer is then shown at the surface's logical size
+;;; through wp_viewporter.
+(wl-include
+ (asdf:system-relative-pathname :garnet "src/gem/protocols/fractional-scale-v1.xml")
+ :export t)
