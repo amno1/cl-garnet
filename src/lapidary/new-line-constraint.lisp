@@ -198,7 +198,7 @@
 			      (g-value gadget :left)
 			      (opal:bottom gadget)
 			      nil)
-    (c32 nil nil nil :left left :top top)))
+    (c32 nil nil :left left :top top)))
 
 (defun LINE-UNCONSTRAIN-FN (gadget string)
   (declare (ignore gadget string))
