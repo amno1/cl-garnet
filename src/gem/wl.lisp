@@ -146,6 +146,9 @@ calls this only for the X device; the X backends define it too.)"
   ;; Wayland objects, for a top-level window while it is mapped.
   wl-surface xdg-surface xdg-toplevel xdg-popup
   (configured nil)
+  ;; The wl_callback of the last commit's frame request, until the
+  ;; compositor says it is time to draw the next frame.
+  (frame-callback nil)
   (buffers '())                         ; WL-SHM-BUFFERs
   (damage nil))                         ; (X0 Y0 X1 Y1) not yet presented
 
@@ -271,11 +274,29 @@ pixels offset by (SX, SY), into the XRGB8888 buffer at DST-PTR."
           (wl-composite child (+ ox (wl-window-x child)) (+ oy (wl-window-y child))
                         buffer cx0 cy0 cx1 cy1))))))
 
+(defun wl-request-frame (top surface)
+  "Ask to be told when the compositor would show TOP's next frame.  Until
+then, its damage only accumulates, so that drawing faster than the screen
+refreshes commits no frames that would never be seen."
+  (let ((callback (wl-surface.frame surface)))
+    (setf (wl-window-frame-callback top) callback)
+    (push (evlambda
+            (:done (time)
+             (declare (ignore time))
+             ;; A late callback, from before TOP was hidden, is not ours.
+             (when (eq (wl-window-frame-callback top) callback)
+               (setf (wl-window-frame-callback top) nil)
+               (when (wl-window-damage top)
+                 (wl-present top)))))
+          (wl-proxy-hooks callback))))
+
 (defun wl-present (top)
-  "Show TOP's damage, if it can be shown now."
+  "Show TOP's damage, if it can be shown now: not while the frame last
+committed is still waiting for the compositor."
   (let ((damage (wl-window-damage top))
         (surface (wl-window-wl-surface top)))
-    (when (and damage surface (wl-window-configured top) (wl-window-mapped top))
+    (when (and damage surface (wl-window-configured top) (wl-window-mapped top)
+               (null (wl-window-frame-callback top)))
       (let ((w (wl-window-width top)) (h (wl-window-height top)))
         ;; Buffers of another size are of no more use.
         (setf (wl-window-buffers top)
@@ -301,6 +322,7 @@ pixels offset by (SX, SY), into the XRGB8888 buffer at DST-PTR."
             (destructuring-bind (x0 y0 x1 y1) damage
               (wl-surface.attach surface (wl-shm-buffer-proxy buffer) 0 0)
               (wl-surface.damage-buffer surface x0 y0 (- x1 x0) (- y1 y0))
+              (wl-request-frame top surface)
               (wl-surface.commit surface))
             t))))))
 
@@ -427,7 +449,9 @@ next time at another place over another window."
     (when (and surface (wl-window-xdg-toplevel win) (not destroy))
       (wl-surface.attach surface nil 0 0)
       (wl-surface.commit surface)
-      (setf (wl-window-configured win) nil)
+      ;; A hidden surface's frame callback may never come.
+      (setf (wl-window-configured win) nil
+            (wl-window-frame-callback win) nil)
       (setf (wl-window-buffers win)
             (progn (mapc #'wl-free-buffer (wl-window-buffers win)) '()))
       (setf surface nil))
@@ -441,7 +465,8 @@ next time at another place over another window."
             (wl-window-xdg-toplevel win) nil
             (wl-window-xdg-surface win) nil
             (wl-window-wl-surface win) nil
-            (wl-window-configured win) nil)
+            (wl-window-configured win) nil
+            (wl-window-frame-callback win) nil)
       ;; The buffers may still be on screen until the surface goes; free
       ;; them all, and start afresh when shown again.
       (mapc #'wl-free-buffer (wl-window-buffers win))
