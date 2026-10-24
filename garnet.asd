@@ -514,6 +514,16 @@
 			 (:file "wl-protocols")
 			 (:file "wl")))))
 
+(asdf:defsystem :garnet/antron
+  :description "Garnet with Antron (AVX-512 vector graphics) accelerated Wayland GEM driver"
+  :depends-on (:garnet/wl "antron")
+  :license "MIT-ish (also public domain, see LICENSE)"
+  :author "Arthur Miller"
+  :components
+  ((:module gem-antron
+	    :pathname "src/gem"
+	    :components ((:file "antron")))))
+
 ;;; Default entrypoint for backward compatibility
 (asdf:defsystem :garnet
   :description "Garnet GUI toolkit (c. 1990 look/feel) with default CLX backend"
