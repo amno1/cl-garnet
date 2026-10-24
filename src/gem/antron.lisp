@@ -216,9 +216,9 @@
              (fg (if invert-p style-bg style-fg))
              (k (gem::px-surface-scale s))
              (dpi (* gem::*wl-dpi* k))
-             (ascent (truetype:font-ascent gem::*wl-dpi* tt-font))
-             (descent (abs (truetype:font-descent gem::*wl-dpi* tt-font)))
-             (width (truetype:text-line-width gem::*wl-dpi* tt-font str))
+             (ascent (runes:font-ascent gem::*wl-dpi* tt-font))
+             (descent (abs (runes:font-descent gem::*wl-dpi* tt-font)))
+             (width (runes:text-line-width gem::*wl-dpi* tt-font str))
              (dx (gem::dev-edge x k)) (dy (gem::dev-edge y k))
              (cw (gem::px-surface-width s))
              (ch (gem::px-surface-height s))
@@ -236,14 +236,14 @@
                                           (max 0 (min bw (- cw bx))) bg-pix)))))
         ;; Blit TrueType glyph masks directly using Antron's AVX-512 SIMD blend-glyph-mask
         (loop for (pen . image) across (gem::wl-layout tt-font str dpi)
-              when (plusp (truetype:glyph-image-width image)) do
-                (let ((gx (- (+ dx pen) (truetype:glyph-image-x image)))
-                      (gy (- dy (truetype:glyph-image-y image))))
+              when (plusp (runes:glyph-image-width image)) do
+                (let ((gx (- (+ dx pen) (runes:glyph-image-x image)))
+                      (gy (- dy (runes:glyph-image-y image))))
                   (antron:blend-glyph-mask pixels stride cw ch gx gy
-                                          (truetype:glyph-image-data image)
-                                          (truetype:glyph-image-width image)
-                                          (truetype:glyph-image-height image)
-                                          (truetype:glyph-image-stride image)
+                                          (runes:glyph-image-data image)
+                                          (runes:glyph-image-width image)
+                                          (runes:glyph-image-height image)
+                                          (runes:glyph-image-stride image)
                                           fg-r fg-g fg-b 255 :argb)))
         (gem::wl-note-drawn drawable (- x 2) (- y ascent 2) (+ width 4) (+ ascent descent 4))))))
 

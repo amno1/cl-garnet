@@ -1307,22 +1307,22 @@ reused by the next call, so the result must not be kept."
       (xcb:copy-area conn source destination gc-xid s-x s-y d-x d-y width height))))
 
 
-;;; Fonts and Text Operations with xcb-truetype
+;;; Fonts and Text Operations with Runes
 
-(defparameter *xcb-truetype-initialized-p* nil)
+(defparameter *runes-initialized-p* nil)
 (defparameter *xcb-font-cache-table* (make-hash-table :test 'equal))
 (defparameter *drawable-xft-table* (make-hash-table :test 'eql))
 
 (defun ensure-xcb-truetype-initialized ()
-  "Ensure xcb-truetype has indexed available system fonts."
-  (unless *xcb-truetype-initialized-p*
-    (xcb-truetype:cache-fonts)
-    (setf *xcb-truetype-initialized-p* t)))
+  "Ensure Runes has indexed available system fonts."
+  (unless *runes-initialized-p*
+    (runes/xcb:cache-fonts)
+    (setf *runes-initialized-p* t)))
 
 (defun xcb-resolve-font-family-and-subfamily (family face)
   "Resolve Garnet family and face keywords to an installed TrueType family and subfamily."
   (ensure-xcb-truetype-initialized)
-  (let* ((all-fams (xcb-truetype:get-font-families))
+  (let* ((all-fams (runes/xcb:get-font-families))
          (fam (cond
                 ((stringp family)
                  (or (find family all-fams :test #'string-equal)
@@ -1339,7 +1339,7 @@ reused by the next call, so the result must not be kept."
                  (or (find "DejaVu Sans Mono" all-fams :test #'string-equal)
                      (find "Liberation Mono" all-fams :test #'string-equal)
                      (first all-fams)))))
-         (available-subs (xcb-truetype:get-font-subfamilies fam))
+         (available-subs (runes/xcb:get-font-subfamilies fam))
          (target-sub (case face
                        (:bold
                         (or (find "Bold" available-subs :test #'string-equal)
@@ -1366,18 +1366,18 @@ reused by the next call, so the result must not be kept."
                 ((eq size :large) 16)
                 ((eq size :very-large) 20)
                 (t 12))))
-      (make-instance 'xcb-truetype:font
+      (make-instance 'runes/xcb:font
                      :family fam
                      :subfamily sub
                      :size sz
                      :antialias t))))
 
 (defun xcb-font-to-internal (root-window opal-font)
-  "Convert a Garnet font schema (or descriptor) into an xcb-truetype:font instance."
+  "Convert a Garnet font schema (or descriptor) into an runes/xcb:font instance."
   (declare (ignore root-window))
   (ensure-xcb-truetype-initialized)
   (cond
-    ((typep opal-font 'xcb-truetype:font)
+    ((typep opal-font 'runes/xcb:font)
      opal-font)
     ((and opal-font (schema-p opal-font))
      (let* ((fam (or (g-value opal-font :family) :fixed))
@@ -1406,7 +1406,7 @@ reused by the next call, so the result must not be kept."
                (xcb-make-truetype-font :fixed :roman :medium))))))
 
 (defun xcb-resolve-font (root-window font)
-  (if (typep font 'xcb-truetype:font)
+  (if (typep font 'runes/xcb:font)
       font
       (or (and (schema-p font) (g-value font :xfont))
           (xcb-font-to-internal root-window font))))
@@ -1414,7 +1414,7 @@ reused by the next call, so the result must not be kept."
 (defun xcb-font-exists-p (root-window name)
   (declare (ignore root-window))
   (ensure-xcb-truetype-initialized)
-  (not (null (find (string name) (xcb-truetype:get-font-families)
+  (not (null (find (string name) (runes/xcb:get-font-families)
                    :test #'string-equal))))
 
 (defun xcb-font-name-p (root-window arg)
@@ -1426,7 +1426,7 @@ reused by the next call, so the result must not be kept."
   (format nil "~A" key))
 
 (defun xcb-delete-font (root-window font)
-  "Forget FONT's xcb-truetype font.  Such fonts live entirely in Lisp, so
+  "Forget FONT's Runes font.  Such fonts live entirely in Lisp, so
 there is nothing to free on the server; this only drops the cache entries
 that refer to it."
   (declare (ignore root-window))
@@ -1441,8 +1441,8 @@ that refer to it."
 (defun xcb-font-max-min-width (root-window font min-too)
   (let* ((tt-font (xcb-resolve-font root-window font))
          (target (or *default-xcb-screen* 96))
-         (max-w (xcb-truetype:text-line-width target tt-font "M"))
-         (min-w (xcb-truetype:text-line-width target tt-font "i")))
+         (max-w (runes/xcb:text-line-width target tt-font "M"))
+         (min-w (runes/xcb:text-line-width target tt-font "i")))
     (if min-too
         (values max-w min-w)
         max-w)))
@@ -1450,12 +1450,12 @@ that refer to it."
 (defun xcb-max-character-ascent (root-window font)
   (let* ((tt-font (xcb-resolve-font root-window font))
          (target (or *default-xcb-screen* 96)))
-    (xcb-truetype:font-ascent target tt-font)))
+    (runes/xcb:font-ascent target tt-font)))
 
 (defun xcb-max-character-descent (root-window font)
   (let* ((tt-font (xcb-resolve-font root-window font))
          (target (or *default-xcb-screen* 96)))
-    (abs (xcb-truetype:font-descent target tt-font))))
+    (abs (runes/xcb:font-descent target tt-font))))
 
 ;;; Widths are advance widths (TEXT-LINE-WIDTH), as X font metrics give
 ;;; them, not ink extents (TEXT-WIDTH): Opal lays text out, and places
@@ -1465,20 +1465,20 @@ that refer to it."
   (let* ((tt-font (xcb-resolve-font root-window font))
          (target (or *default-xcb-screen* 96))
          (str (if character (string (code-char character)) "X")))
-    (xcb-truetype:text-line-width target tt-font str)))
+    (runes/xcb:text-line-width target tt-font str)))
 
 (defun xcb-text-width (root-window opal-font string)
   (let* ((tt-font (xcb-resolve-font root-window opal-font))
          (target (or *default-xcb-screen* 96)))
-    (xcb-truetype:text-line-width target tt-font (or string ""))))
+    (runes/xcb:text-line-width target tt-font (or string ""))))
 
 (defun xcb-text-extents (root-window opal-font string)
   (let* ((tt-font (xcb-resolve-font root-window opal-font))
          (target (or *default-xcb-screen* 96))
          (str (or string ""))
-         (width (xcb-truetype:text-line-width target tt-font str))
-         (ascent (xcb-truetype:font-ascent target tt-font))
-         (descent (abs (xcb-truetype:font-descent target tt-font))))
+         (width (runes/xcb:text-line-width target tt-font str))
+         (ascent (runes/xcb:font-ascent target tt-font))
+         (descent (abs (runes/xcb:font-descent target tt-font))))
     (values width ascent descent 0 width width)))
 
 (defun xcb-color-to-rgb-int (color)
@@ -1504,14 +1504,14 @@ that refer to it."
   (or (gethash drawable-xid *drawable-xft-table*)
       (setf (gethash drawable-xid *drawable-xft-table*)
             (make-instance (if (gethash drawable-xid *pixmap-table*)
-                               'xcb-truetype:pixmap
-                               'xcb-truetype:window)
+                               'runes/xcb:pixmap
+                               'runes/xcb:window)
                            :connection conn
                            :id drawable-xid
                            :screen screen
                            :owned t))))
 
-;;; An xcb-truetype drawable owns a RENDER picture once text has been drawn on
+;;; An Runes drawable owns a RENDER picture once text has been drawn on
 ;;; it, and has a finalizer that frees the picture and the drawable itself.  So
 ;;; its entry must never simply be dropped from *DRAWABLE-XFT-TABLE*: the
 ;;; finalizer would later free XIDs that are already gone.  Either destroy it
@@ -1519,18 +1519,18 @@ that refer to it."
 
 (defun xcb-release-drawable (conn xid raw-destroy-fn)
   "Destroy the window or pixmap XID.  If text was drawn on it, destroy it
-through xcb-truetype, which also frees its RENDER picture; a pixmap's memory
+through Runes, which also frees its RENDER picture; a pixmap's memory
 is not released while a picture still refers to it.  Otherwise call
 RAW-DESTROY-FN with CONN and XID."
   (let ((d (gethash xid *drawable-xft-table*)))
     (cond (d
            (remhash xid *drawable-xft-table*)
-           (xcb-truetype:destroy-drawable d))
+           (runes/xcb:destroy-drawable d))
           (t
            (funcall raw-destroy-fn conn xid)))))
 
 (defun xcb-forget-destroyed-drawable (xid)
-  "Drop the xcb-truetype drawable for the window XID, which the server has
+  "Drop the Runes drawable for the window XID, which the server has
 already destroyed together with its pictures, without sending anything."
   (let ((d (gethash xid *drawable-xft-table*)))
     (when d
@@ -1549,10 +1549,10 @@ already destroyed together with its pictures, without sending anything."
     (when (and conn drawable tt-font (> (length str) 0))
       (let* ((xft-win (xcb-get-xft-drawable conn screen drawable))
              (fg (xcb-color-for-style line-style invert-p))
-             (ascent (xcb-truetype:font-ascent screen tt-font)))
+             (ascent (runes/xcb:font-ascent screen tt-font)))
         (when fill-background
-          (let* ((w (xcb-truetype:text-line-width screen tt-font str))
-                 (h (+ ascent (abs (xcb-truetype:font-descent screen tt-font))))
+          (let* ((w (runes/xcb:text-line-width screen tt-font str))
+                 (h (+ ascent (abs (runes/xcb:font-descent screen tt-font))))
                  (bg-top (- y ascent))
                  (bg-gc (display-info-filling-style-gc display-info))
                  (bg-color (if invert-p
@@ -1570,7 +1570,7 @@ already destroyed together with its pictures, without sending anything."
                                                           :x x :y bg-top
                                                           :width (max 1 w)
                                                           :height (max 1 h))))))
-        (xcb-truetype:draw-text xft-win tt-font str x y :colour fg)))))
+        (runes/xcb:draw-text xft-win tt-font str x y :colour fg)))))
 
 
 ;;; Images and Pixmaps

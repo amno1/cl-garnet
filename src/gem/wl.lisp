@@ -23,7 +23,7 @@
 ;;;   screen position, so that TRANSLATE-COORDINATES and popup placement
 ;;;   agree with each other.
 ;;;
-;;; * Text is drawn on the client too, by cl-truetype: each glyph's alpha
+;;; * Text is drawn on the client too, by Runes: each glyph's alpha
 ;;;   map is blended into the drawable.
 ;;;
 ;;; * Keys arrive as evdev codes with an XKB keymap from the compositor,
@@ -1410,7 +1410,7 @@ rectangles, segments and quarter arcs."
                   (aref (px-surface-pixels s) (+ (* sy sw) sx)))))))))
 
 
-;;; Fonts and Text, with cl-truetype
+;;; Fonts and Text, with Runes
 
 (defparameter *wl-truetype-initialized-p* nil)
 (defparameter *wl-font-cache-table* (make-hash-table :test 'equal))
@@ -1422,13 +1422,13 @@ arithmetic on every glyph.")
 
 (defun ensure-wl-truetype-initialized ()
   (unless *wl-truetype-initialized-p*
-    (truetype:cache-fonts)
+    (runes:cache-fonts)
     (setf *wl-truetype-initialized-p* t)))
 
 (defun wl-resolve-font-family-and-subfamily (family face)
   "An installed TrueType family and subfamily for Garnet's FAMILY and FACE."
   (ensure-wl-truetype-initialized)
-  (let* ((all-fams (truetype:get-font-families))
+  (let* ((all-fams (runes:get-font-families))
          (fam (flet ((pick (&rest names)
                        (or (loop for n in names
                                  thereis (find n all-fams :test #'string-equal))
@@ -1437,7 +1437,7 @@ arithmetic on every glyph.")
                       ((eq family :serif) (pick "DejaVu Serif" "Liberation Serif"))
                       ((eq family :sans-serif) (pick "DejaVu Sans" "Liberation Sans"))
                       (t (pick "DejaVu Sans Mono" "Liberation Mono")))))
-         (subs (truetype:get-font-subfamilies fam))
+         (subs (runes:get-font-subfamilies fam))
          (sub (flet ((pick (&rest names)
                        (or (loop for n in names thereis (find n subs :test #'string-equal))
                            (first subs))))
@@ -1450,7 +1450,7 @@ arithmetic on every glyph.")
 
 (defun wl-make-truetype-font (family face size)
   (multiple-value-bind (fam sub) (wl-resolve-font-family-and-subfamily family face)
-    (make-instance 'truetype:font
+    (make-instance 'runes:font
                    :family fam :subfamily sub
                    :size (cond ((numberp size) size)
                                ((eq size :small) 10)
@@ -1460,7 +1460,7 @@ arithmetic on every glyph.")
                    :antialias t)))
 
 (defun wl-font-to-internal (root-window opal-font)
-  "The cl-truetype font for a Garnet font schema or descriptor."
+  "The Runes font for a Garnet font schema or descriptor."
   (declare (ignore root-window))
   (ensure-wl-truetype-initialized)
   (flet ((cached (key family face size)
@@ -1468,7 +1468,7 @@ arithmetic on every glyph.")
                (setf (gethash key *wl-font-cache-table*)
                      (wl-make-truetype-font family face size)))))
     (cond
-      ((typep opal-font 'truetype:font) opal-font)
+      ((typep opal-font 'runes:font) opal-font)
       ((and opal-font (schema-p opal-font))
        (let* ((fam (or (g-value opal-font :family) :fixed))
               (fac (or (g-value opal-font :face) :roman))
@@ -1482,16 +1482,16 @@ arithmetic on every glyph.")
       (t (cached :default :fixed :roman :medium)))))
 
 (defun wl-resolve-font (root-window font)
-  (if (typep font 'truetype:font)
+  (if (typep font 'runes:font)
       font
       (or (and (schema-p font) (let ((f (g-value font :xfont)))
-                                 (and (typep f 'truetype:font) f)))
+                                 (and (typep f 'runes:font) f)))
           (wl-font-to-internal root-window font))))
 
 (defun wl-font-exists-p (root-window name)
   (declare (ignore root-window))
   (ensure-wl-truetype-initialized)
-  (not (null (find (string name) (truetype:get-font-families) :test #'string-equal))))
+  (not (null (find (string name) (runes:get-font-families) :test #'string-equal))))
 
 (defun wl-font-name-p (root-window arg)
   (declare (ignore root-window))
@@ -1502,7 +1502,7 @@ arithmetic on every glyph.")
   (format nil "~A" key))
 
 (defun wl-delete-font (root-window font)
-  "Forget FONT's cl-truetype font; it lives entirely in Lisp."
+  "Forget FONT's Runes font; it lives entirely in Lisp."
   (declare (ignore root-window))
   (let ((tt-font (and (schema-p font) (kr:g-cached-value font :xfont))))
     (when tt-font
@@ -1515,31 +1515,31 @@ arithmetic on every glyph.")
 
 (defun wl-font-max-min-width (root-window font min-too)
   (let* ((tt-font (wl-resolve-font root-window font))
-         (max-w (truetype:text-line-width *wl-dpi* tt-font "M"))
-         (min-w (truetype:text-line-width *wl-dpi* tt-font "i")))
+         (max-w (runes:text-line-width *wl-dpi* tt-font "M"))
+         (min-w (runes:text-line-width *wl-dpi* tt-font "i")))
     (if min-too (values max-w min-w) max-w)))
 
 (defun wl-max-character-ascent (root-window font)
-  (truetype:font-ascent *wl-dpi* (wl-resolve-font root-window font)))
+  (runes:font-ascent *wl-dpi* (wl-resolve-font root-window font)))
 
 (defun wl-max-character-descent (root-window font)
-  (abs (truetype:font-descent *wl-dpi* (wl-resolve-font root-window font))))
+  (abs (runes:font-descent *wl-dpi* (wl-resolve-font root-window font))))
 
 ;;; Widths are advance widths (TEXT-LINE-WIDTH), as X font metrics give
 ;;; them: Opal lays text out by adding up character widths.
 (defun wl-character-width (root-window font character)
-  (truetype:text-line-width *wl-dpi* (wl-resolve-font root-window font)
+  (runes:text-line-width *wl-dpi* (wl-resolve-font root-window font)
                             (if character (string (code-char character)) "X")))
 
 (defun wl-text-width (root-window opal-font string)
-  (truetype:text-line-width *wl-dpi* (wl-resolve-font root-window opal-font) (or string "")))
+  (runes:text-line-width *wl-dpi* (wl-resolve-font root-window opal-font) (or string "")))
 
 (defun wl-text-extents (root-window opal-font string)
   (let* ((tt-font (wl-resolve-font root-window opal-font))
          (str (or string ""))
-         (width (truetype:text-line-width *wl-dpi* tt-font str))
-         (ascent (truetype:font-ascent *wl-dpi* tt-font))
-         (descent (abs (truetype:font-descent *wl-dpi* tt-font))))
+         (width (runes:text-line-width *wl-dpi* tt-font str))
+         (ascent (runes:font-ascent *wl-dpi* tt-font))
+         (descent (abs (runes:font-descent *wl-dpi* tt-font))))
     (values width ascent descent 0 width width)))
 
 (defun wl-layout (tt-font string &optional (dpi *wl-dpi*))
@@ -1553,7 +1553,7 @@ arithmetic on every glyph.")
                                (destructuring-bind (index pen image) entry
                                  (declare (ignore index))
                                  (cons (round pen) image)))
-                     (truetype:layout-glyphs tt-font string dpi dpi)))))))
+                     (runes:layout-glyphs tt-font string dpi dpi)))))))
 
 (defun wl-draw-text (window x y string font function line-style
                      &optional fill-background invert-p)
@@ -1575,9 +1575,9 @@ arithmetic on every glyph.")
              (dpi (* *wl-dpi* k))
              ;; Opal measured the text in logical pixels; it is drawn at
              ;; the surface's scale, from the device baseline.
-             (ascent (truetype:font-ascent *wl-dpi* tt-font))
-             (descent (abs (truetype:font-descent *wl-dpi* tt-font)))
-             (width (truetype:text-line-width *wl-dpi* tt-font str))
+             (ascent (runes:font-ascent *wl-dpi* tt-font))
+             (descent (abs (runes:font-descent *wl-dpi* tt-font)))
+             (width (runes:text-line-width *wl-dpi* tt-font str))
              (dx (dev-edge x k)) (dy (dev-edge y k))
              (clip (px-gc-clip (wl-gc-device gc k))))
         (when fill-background
@@ -1585,16 +1585,16 @@ arithmetic on every glyph.")
               (dev-rect x (- y ascent) (max 1 width) (max 1 (+ ascent descent)) k)
             (px-clear-rectangle-clipped s clip bx by bw bh (if invert-p style-fg style-bg))))
         (loop for (pen . image) across (wl-layout tt-font str dpi)
-              when (plusp (truetype:glyph-image-width image))
+              when (plusp (runes:glyph-image-width image))
                 do (px-blend-alpha s clip
-                                   (- (+ dx pen) (truetype:glyph-image-x image))
-                                   (- dy (truetype:glyph-image-y image))
-                                   (truetype:glyph-image-width image)
-                                   (truetype:glyph-image-height image)
-                                   (truetype:glyph-image-data image)
-                                   (truetype:glyph-image-stride image)
+                                   (- (+ dx pen) (runes:glyph-image-x image))
+                                   (- dy (runes:glyph-image-y image))
+                                   (runes:glyph-image-width image)
+                                   (runes:glyph-image-height image)
+                                   (runes:glyph-image-data image)
+                                   (runes:glyph-image-stride image)
                                    fg))
-        (loop for (bx by bw bh) in (truetype:font-decorations tt-font str dx dy dpi dpi t)
+        (loop for (bx by bw bh) in (runes:font-decorations tt-font str dx dy dpi dpi t)
               do (px-clear-rectangle-clipped s clip bx by bw bh fg))
         (wl-note-drawn drawable (- x 2) (- y ascent 2) (+ width 4) (+ ascent descent 4))))))
 
