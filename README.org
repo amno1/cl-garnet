@@ -87,7 +87,7 @@ Mostly functional, complete (c. 1990) gui toolkit
    
    It needs =$WAYLAND_DISPLAY= set, a compositor with =xdg_wm_base=
    (any desktop one), libxkbcommon (through =cl-xkb=), and
-   =cl-truetype=, the backend-neutral core of [[https://github.com/amno1/clxcb-truetype][clxcb-truetype]].  Use a
+   =runes=, the backend-neutral font engine (formerly cl-truetype / clxcb-truetype).  Use a
    Wayflan newer than Quicklisp's 2026-01 release: older ones fail on
    events that name no object.
 
@@ -95,7 +95,7 @@ Mostly functional, complete (c. 1990) gui toolkit
    (=src/gem/wl*.lisp=) draws every window in Lisp memory, following
    X11's rules for raster functions, stipples, clipping, wide lines and
    arcs, and hands the compositor finished buffers.  Text is drawn
-   with cl-truetype.  Subwindows exist only in Garnet: they are drawn
+   with Runes.  Subwindows exist only in Garnet: they are drawn
    into their top-level window, which is the Wayland surface.  Keys
    are translated by the compositor's XKB keymap into X keysyms, so
    Garnet's key bindings apply unchanged.

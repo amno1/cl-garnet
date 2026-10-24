@@ -489,7 +489,7 @@
 
 (asdf:defsystem :garnet/xcb
   :description "Garnet with clxcb (pure Common Lisp X11) backend (work-in-progress)"
-  :depends-on (:garnet/core :clxcb "clxcb/keysyms" :clxcb-truetype :trivial-garbage)
+  :depends-on (:garnet/core :clxcb "clxcb/keysyms" :runes/xcb :trivial-garbage)
   :license "MIT-ish (also public domain, see LICENSE)"
   :author "Arthur Miller"
   :components
@@ -499,7 +499,7 @@
 
 (asdf:defsystem :garnet/wl
   :description "Garnet with Wayland (Wayflan) backend (work-in-progress)"
-  :depends-on (:garnet/core :wayflan-client :cl-xkb :cl-truetype :cffi :babel :trivial-garbage)
+  :depends-on (:garnet/core :wayflan-client :cl-xkb :runes :cffi :babel :trivial-garbage)
   :license "MIT-ish (also public domain, see LICENSE)"
   :author "Arthur Miller"
   :components
